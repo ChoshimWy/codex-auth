@@ -9,3 +9,15 @@ dist/
 
 # Local benchmarking workspace
 benchmark/*
+
+# Swift / CodexSwitcher build
+apps/CodexSwitcher/.build/
+apps/CodexSwitcher/.swiftpm/
+apps/CodexSwitcher/dist/
+apps/CodexSwitcher/CodexSwitcher.app/
+
+# Bundled binary (built during packaging, not committed)
+apps/CodexSwitcher/Sources/CodexSwitcher/Resources/codex-auth
+
+# Release artifacts (DMG uploaded to GitHub Releases, not committed)
+release/*.dmg
