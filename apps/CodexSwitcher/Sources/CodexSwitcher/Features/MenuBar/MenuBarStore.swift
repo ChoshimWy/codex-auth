@@ -79,7 +79,9 @@ final class MenuBarStore {
         defer { switchingAccountID = nil }
 
         do {
-            let path = await CLIProcessService.shared.resolvePath() ?? "codex-auth"
+            guard let path = await CLIProcessService.shared.resolvePath() else {
+                throw CLIError.notFound
+            }
             let task = Process()
             task.executableURL = URL(fileURLWithPath: path)
             task.arguments = ["switch", account.id, "--json"]
