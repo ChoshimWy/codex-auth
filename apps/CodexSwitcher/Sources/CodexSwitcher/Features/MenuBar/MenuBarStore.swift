@@ -78,22 +78,53 @@ final class MenuBarStore {
         switchingAccountID = account.id
         defer { switchingAccountID = nil }
 
-        do {
-            guard let path = await CLIProcessService.shared.resolvePath() else {
-                throw CLIError.notFound
-            }
+        guard let path = await CLIProcessService.shared.resolvePath() else {
+            errorMessage = L10n.cliNotFound
+            return
+        }
+        let accountId = account.id
+
+        let result: (success: Bool, message: String?) = await Task.detached {
             let task = Process()
             task.executableURL = URL(fileURLWithPath: path)
-            task.arguments = ["switch", account.id, "--json"]
-            task.standardOutput = Pipe()
-            task.standardError = Pipe()
+            task.arguments = ["switch", accountId, "--json"]
 
-            try task.run()
-            task.waitUntilExit()
+            let stdoutPipe = Pipe()
+            let stderrPipe = Pipe()
+            task.standardOutput = stdoutPipe
+            task.standardError = stderrPipe
 
+            do {
+                try task.run()
+                task.waitUntilExit()
+            } catch {
+                return (false, error.localizedDescription)
+            }
+
+            let exitOK = task.terminationStatus == 0
+
+            var message: String?
+            if !exitOK {
+                if let data = try? stderrPipe.fileHandleForReading.readToEnd(),
+                   let msg = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !msg.isEmpty {
+                    message = msg
+                } else if let data = try? stdoutPipe.fileHandleForReading.readToEnd(),
+                          let raw = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                          !raw.isEmpty,
+                          let json = try? JSONDecoder().decode([String: String].self, from: raw.data(using: .utf8) ?? Data()),
+                          let err = json["error"] {
+                    message = err
+                }
+            }
+
+            return (exitOK, message)
+        }.value
+
+        if result.success {
             await refresh()
-        } catch {
-            errorMessage = error.localizedDescription
+        } else {
+            errorMessage = result.message ?? "Switch failed"
         }
     }
 }

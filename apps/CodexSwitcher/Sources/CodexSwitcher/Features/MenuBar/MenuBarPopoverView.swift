@@ -68,6 +68,9 @@ struct MenuBarPopoverView: View {
                     Text(L10n.footerLoading)
                 }
                 Spacer()
+                Button(L10n.quit) { NSApplication.shared.terminate(nil) }
+                    .buttonStyle(.plain)
+                Text("·")
                 Text(L10n.footerAccounts(store.accounts.count))
             }
             .font(AppTypography.caption)

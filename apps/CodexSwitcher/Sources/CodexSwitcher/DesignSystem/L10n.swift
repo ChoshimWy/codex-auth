@@ -45,6 +45,7 @@ enum L10n {
     static var statusRefreshing: String { loc("status.refreshing") }
     static var statusError:      String { loc("status.error") }
     static var statusDefault:    String { loc("status.default") }
+    static var quit:             String { loc("quit") }
 
     static var settingsGeneral:         String { loc("settings.general") }
     static var settingsAbout:           String { loc("settings.about") }
@@ -100,6 +101,7 @@ enum L10n {
         "status.refreshing": "Refreshing…",
         "status.error": "Error",
         "status.default": "Codex",
+        "quit": "Quit",
         "settings.general": "General",
         "settings.about": "About",
         "settings.language": "Language",
@@ -145,6 +147,7 @@ enum L10n {
         "status.refreshing": "刷新中…",
         "status.error": "错误",
         "status.default": "Codex",
+        "quit": "退出",
         "settings.general": "通用",
         "settings.about": "关于",
         "settings.language": "语言",

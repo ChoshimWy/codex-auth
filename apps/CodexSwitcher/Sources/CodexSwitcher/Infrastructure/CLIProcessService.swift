@@ -64,21 +64,26 @@ actor CLIProcessService {
         task.arguments = ["list", "--json"]
 
         let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
+        let collector = OutputCollector()
+
+        stdoutPipe.fileHandleForReading.readabilityHandler = { [collector] handle in
+            let chunk = handle.availableData
+            if !chunk.isEmpty { collector.append(chunk) }
+        }
+
         task.standardOutput = stdoutPipe
-        task.standardError = stderrPipe
+        task.standardError = FileHandle.nullDevice
 
         try task.run()
         task.waitUntilExit()
 
-        // Drain stderr
-        _ = try? stderrPipe.fileHandleForReading.readToEnd()
+        stdoutPipe.fileHandleForReading.readabilityHandler = nil
+        let data = collector.data
 
         guard task.terminationStatus == 0,
-              let data = try? stdoutPipe.fileHandleForReading.readToEnd(),
+              !data.isEmpty,
               let raw = String(data: data, encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-              !raw.isEmpty else {
+                .trimmingCharacters(in: .whitespacesAndNewlines) else {
             throw CLIError.executionFailed(task.terminationStatus)
         }
 
@@ -101,5 +106,23 @@ enum CLIError: LocalizedError {
         case .executionFailed(let code): return L10n.cliExitCode(code)
         case .invalidOutput: return L10n.cliInvalidOutput
         }
+    }
+}
+
+/// Thread-safe `Data` accumulator for `FileHandle.readabilityHandler`.
+private final class OutputCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _data = Data()
+
+    func append(_ chunk: Data) {
+        lock.lock()
+        _data.append(chunk)
+        lock.unlock()
+    }
+
+    var data: Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return _data
     }
 }
