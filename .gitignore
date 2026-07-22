@@ -21,3 +21,6 @@ apps/CodexSwitcher/Sources/CodexSwitcher/Resources/codex-auth
 
 # Release artifacts (DMG uploaded to GitHub Releases, not committed)
 release/*.dmg
+
+# Local signing credentials
+apps/CodexSwitcher/Scripts/.env

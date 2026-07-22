@@ -3,11 +3,19 @@ set -e
 SCRIPTS="$(cd "$(dirname "$0")" && pwd)"
 SWIFT_DIR="$(cd "$SCRIPTS/.." && pwd)"
 ROOT="$(cd "$SWIFT_DIR/../.." && pwd)"
+
+# Load local credentials if available (not committed to git)
+[ -f "$SCRIPTS/.env" ] && . "$SCRIPTS/.env"
 RELEASE_DIR="$ROOT/release"
 BUILD_DIR="$SWIFT_DIR/.build/arm64-apple-macosx/release"
 APP_NAME="CodexSwitcher"
 APP_BUNDLE="$APP_NAME.app"
-DIST_DIR="$SWIFT_DIR/dist"
+
+# Signing — set these in your environment or a local .env file
+#    CODE_SIGN_IDENTITY    e.g. "Developer ID Application: ..."
+#    NOTARY_PROFILE        keychain profile for notarytool
+CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 
 echo "=== 1. Building codex-auth (Zig) ==="
 cd "$ROOT"
@@ -22,51 +30,75 @@ cd "$SWIFT_DIR"
 swift build -c release
 
 echo "=== 4. Creating .app bundle ==="
-rm -rf "$DIST_DIR" "$APP_BUNDLE"
-mkdir -p "$DIST_DIR"
+rm -rf "$APP_BUNDLE"
+mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 
-# App bundle structure
-mkdir -p "$APP_BUNDLE/Contents/MacOS"
-mkdir -p "$APP_BUNDLE/Contents/Resources"
-
-# Copy executable
 cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/"
 chmod +x "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
-
-# Copy resource bundle
 cp -R "$BUILD_DIR/${APP_NAME}_${APP_NAME}.bundle" "$APP_BUNDLE/Contents/Resources/"
-
-# Copy Info.plist
 cp "$SCRIPTS/Info.plist" "$APP_BUNDLE/Contents/"
-
-# Copy PkgInfo
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
+# Entitlements (hardened runtime)
+cat > "$SCRIPTS/entitlements.plist" << ENT
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+</dict>
+</plist>
+ENT
+
 echo "=== 5. Code-signing ==="
-# Ad-hoc sign (no hardened runtime — notarization not needed for personal distribution)
-codesign --sign - --force --deep \
-    "$APP_BUNDLE/Contents/Resources/${APP_NAME}_${APP_NAME}.bundle/codex-auth" 2>/dev/null || true
-codesign --sign - --force --deep \
-    "$APP_BUNDLE" 2>/dev/null || true
+if [ -n "$CODE_SIGN_IDENTITY" ]; then
+    codesign --sign "$CODE_SIGN_IDENTITY" --force --options=runtime --timestamp \
+        "$APP_BUNDLE/Contents/Resources/${APP_NAME}_${APP_NAME}.bundle/codex-auth" 2>/dev/null || true
+
+    codesign --sign "$CODE_SIGN_IDENTITY" --force --deep --options=runtime --timestamp \
+        --entitlements "$SCRIPTS/entitlements.plist" \
+        "$APP_BUNDLE"
+
+    codesign -dvv "$APP_BUNDLE" 2>&1 | grep "Authority" | head -1
+else
+    codesign --sign - --force --deep "$APP_BUNDLE" 2>/dev/null || true
+    echo "(ad-hoc signed — set CODE_SIGN_IDENTITY for Developer ID)"
+fi
 
 echo "=== 6. Creating DMG ==="
-mkdir -p "$DIST_DIR/dmg"
-cp -R "$APP_BUNDLE" "$DIST_DIR/dmg/"
-ln -sf /Applications "$DIST_DIR/dmg/Applications"
+rm -rf "$RELEASE_DIR/dmg_staging" "$RELEASE_DIR/${APP_NAME}-0.1.0.dmg"
+mkdir -p "$RELEASE_DIR/dmg_staging"
+cp -R "$APP_BUNDLE" "$RELEASE_DIR/dmg_staging/"
+ln -sf /Applications "$RELEASE_DIR/dmg_staging/Applications"
 
-DMG_NAME="${APP_NAME}-0.1.0.dmg"
-hdiutil create \
-    -volname "$APP_NAME" \
-    -srcfolder "$DIST_DIR/dmg" \
-    -ov -format UDZO \
-    "$DIST_DIR/$DMG_NAME"
+DMG_PATH="$RELEASE_DIR/${APP_NAME}-0.1.0.dmg"
+hdiutil create -volname "$APP_NAME" -srcfolder "$RELEASE_DIR/dmg_staging" -ov -format UDZO "$DMG_PATH"
+
+# Sign the DMG too
+if [ -n "$CODE_SIGN_IDENTITY" ]; then
+    codesign --sign "$CODE_SIGN_IDENTITY" --force --options=runtime --timestamp "$DMG_PATH"
+fi
+
+echo "=== 7. Notarizing ==="
+if [ -n "$NOTARY_PROFILE" ]; then
+    xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait 2>&1
+    echo "=== 8. Stapling ==="
+    xcrun stapler staple "$DMG_PATH"
+else
+    echo "(skipped — set NOTARY_PROFILE to notarize)"
+fi
 
 # Cleanup
-rm -rf "$DIST_DIR/dmg" "$APP_BUNDLE"
+rm -rf "$RELEASE_DIR/dmg_staging" "$APP_BUNDLE"
 
 echo ""
 echo "=== Done ==="
-echo "DMG:  $DIST_DIR/$DMG_NAME"
-echo "Size: $(du -h "$DIST_DIR/$DMG_NAME" | cut -f1)"
+echo "DMG:  $DMG_PATH"
+echo "Size: $(du -h "$DMG_PATH" | cut -f1)"
 echo ""
-echo "To install: open $DIST_DIR/$DMG_NAME and drag CodexSwitcher to Applications"
+echo "To install: open $DMG_PATH and drag CodexSwitcher to Applications"
