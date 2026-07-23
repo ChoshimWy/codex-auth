@@ -65,11 +65,12 @@ final class MenuBarController: NSObject {
         }
     }
 
-    /// Builds an attributed string with a leading space for icon–text spacing.
-    /// Two thin spaces (`\u{2009}`) ≈ 6pt gap with a 12pt system font.
+    /// Builds an attributed string for the status bar button.
+    /// Uses a single regular space for icon–text spacing (thin-space `\u{2009}`
+    /// can trigger CoreText font-mapping crashes on some system configurations).
     private func statusText(_ string: String, color: NSColor) -> NSAttributedString {
         NSAttributedString(
-            string: "\u{2009}\u{2009}\(string)",
+            string: " \(string)",
             attributes: [
                 .font: NSFont.systemFont(ofSize: 12, weight: .medium),
                 .foregroundColor: color,

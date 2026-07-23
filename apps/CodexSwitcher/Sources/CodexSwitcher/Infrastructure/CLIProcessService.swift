@@ -17,13 +17,16 @@ actor CLIProcessService {
         "/usr/local/bin/codex-auth",
     ]
 
+    private static let resourceBundleName = "CodexSwitcher_CodexSwitcher.bundle"
+    private static let bundledCLIName = "codex-auth"
+
     // MARK: - CLI Discovery
 
     func resolvePath() -> String? {
-        // 1. Bundled codex-auth (shipped with the app)
-        if let bundled = Bundle.module.url(forResource: "codex-auth", withExtension: ""),
-           FileManager.default.isExecutableFile(atPath: bundled.path) {
-            return bundled.path
+        // 1. Bundled codex-auth (shipped inside the .app bundle)
+        //    Bundle.module crashes in .app context; use Bundle.main paths instead.
+        if let bundledPath = findBundledCLI() {
+            return bundledPath
         }
 
         // 2. System PATH lookup
@@ -49,6 +52,30 @@ actor CLIProcessService {
         for known in Self.knownPaths {
             if FileManager.default.isExecutableFile(atPath: known) { return known }
         }
+        return nil
+    }
+
+    /// Locates the bundled `codex-auth` binary without using `Bundle.module`
+    /// (which crashes in a repackaged `.app` bundle because SPM cannot resolve
+    /// the resource path at runtime).
+    private func findBundledCLI() -> String? {
+        let relative = (Self.resourceBundleName as NSString).appendingPathComponent(Self.bundledCLIName)
+
+        // a) Inside .app bundle: Contents/Resources/<bundle>/codex-auth
+        if let resourcePath = Bundle.main.resourcePath {
+            let path = (resourcePath as NSString).appendingPathComponent(relative)
+            if FileManager.default.isExecutableFile(atPath: path) { return path }
+        }
+
+        // b) SPM dev layout: executable dir / <bundle> / codex-auth
+        if let executableURL = Bundle.main.executableURL {
+            let path = executableURL
+                .deletingLastPathComponent()
+                .appendingPathComponent(relative)
+                .path
+            if FileManager.default.isExecutableFile(atPath: path) { return path }
+        }
+
         return nil
     }
 
