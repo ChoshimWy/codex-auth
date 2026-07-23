@@ -4,6 +4,22 @@
 
 `codex-auth` is a command-line tool for switching Codex accounts.
 
+## CodexSwitcher — macOS Menu Bar App
+
+[![CodexSwitcher popover](apps/CodexSwitcher/assets/popover-panel.png)](apps/CodexSwitcher/README.md)
+
+**CodexSwitcher** 是 `codex-auth` 的原生 macOS 菜单栏伴侣应用。基于 SwiftUI 与 Liquid Glass 设计系统构建，让你从菜单栏直接查看和管理 Codex 账号。
+
+- 📊 菜单栏常驻显示当前活跃账号名与用量百分比
+- 🪟 悬浮面板展示账号详情、用量进度、一键切换
+- 🌓 Liquid Glass 毛玻璃表面 + 自适应深浅色模式
+- 🔄 后台定时刷新，状态一目了然
+
+> [!TIP]
+> 从 [Releases](release/) 下载 `CodexSwitcher-*.dmg`，将 app 拖入应用程序文件夹即可使用。
+>
+> 需要已安装 `codex-auth` CLI：[📖 CodexSwitcher 完整文档 →](apps/CodexSwitcher/README.md)
+
 ## Install
 
 Install with npm:
