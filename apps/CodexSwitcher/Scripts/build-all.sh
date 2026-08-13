@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 SWIFT_DIR="$ROOT/apps/CodexSwitcher"
 
 echo "=== Building codex-auth (Zig) ==="
