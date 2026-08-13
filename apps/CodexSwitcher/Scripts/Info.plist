@@ -11,9 +11,11 @@
     <key>CFBundleDisplayName</key>
     <string>Codex Switcher</string>
     <key>CFBundleVersion</key>
-    <string>0.1.0</string>
+    <string>0.2.0</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>0.2.0</string>
+    <key>CodexSwitcherBundledCLIVersion</key>
+    <string></string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleInfoDictionaryVersion</key>

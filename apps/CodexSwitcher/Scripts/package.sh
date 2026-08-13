@@ -16,6 +16,7 @@ APP_BUNDLE="$APP_NAME.app"
 #    NOTARY_PROFILE        keychain profile for notarytool
 CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
+APP_VERSION="${APP_VERSION:-0.2.0}"
 
 echo "=== 1. Building codex-auth (Zig) ==="
 cd "$ROOT"
@@ -24,6 +25,8 @@ zig build -Doptimize=ReleaseFast
 echo "=== 2. Copying codex-auth to Swift Resources ==="
 cp "$ROOT/zig-out/bin/codex-auth" "$SWIFT_DIR/Sources/CodexSwitcher/Resources/codex-auth"
 chmod +x "$SWIFT_DIR/Sources/CodexSwitcher/Resources/codex-auth"
+BUNDLED_CLI_VERSION="$("$SWIFT_DIR/Sources/CodexSwitcher/Resources/codex-auth" --version --json 2>/dev/null | sed -E 's/.*"version":"([^"]+)".*/\1/')"
+echo "Bundled CLI version: ${BUNDLED_CLI_VERSION:-unknown}"
 
 echo "=== 3. Building CodexSwitcher (Swift release) ==="
 cd "$SWIFT_DIR"
@@ -37,6 +40,11 @@ cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/"
 chmod +x "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 cp -R "$BUILD_DIR/${APP_NAME}_${APP_NAME}.bundle" "$APP_BUNDLE/Contents/Resources/"
 cp "$SCRIPTS/Info.plist" "$APP_BUNDLE/Contents/"
+if [ -n "$BUNDLED_CLI_VERSION" ]; then
+    /usr/libexec/PlistBuddy -c "Set :CodexSwitcherBundledCLIVersion ${BUNDLED_CLI_VERSION}" "$APP_BUNDLE/Contents/Info.plist" 2>/dev/null || true
+fi
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${APP_VERSION}" "$APP_BUNDLE/Contents/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${APP_VERSION}" "$APP_BUNDLE/Contents/Info.plist" 2>/dev/null || true
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
 # Entitlements (hardened runtime)
@@ -71,12 +79,12 @@ else
 fi
 
 echo "=== 6. Creating DMG ==="
-rm -rf "$RELEASE_DIR/dmg_staging" "$RELEASE_DIR/${APP_NAME}-0.1.0.dmg"
+rm -rf "$RELEASE_DIR/dmg_staging" "$RELEASE_DIR/${APP_NAME}-${APP_VERSION}.dmg"
 mkdir -p "$RELEASE_DIR/dmg_staging"
 cp -R "$APP_BUNDLE" "$RELEASE_DIR/dmg_staging/"
 ln -sf /Applications "$RELEASE_DIR/dmg_staging/Applications"
 
-DMG_PATH="$RELEASE_DIR/${APP_NAME}-0.1.0.dmg"
+DMG_PATH="$RELEASE_DIR/${APP_NAME}-${APP_VERSION}.dmg"
 hdiutil create -volname "$APP_NAME" -srcfolder "$RELEASE_DIR/dmg_staging" -ov -format UDZO "$DMG_PATH"
 
 # Sign the DMG too
