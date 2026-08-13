@@ -8,11 +8,15 @@
 
 - **菜单栏状态** — 菜单栏常驻显示当前活跃账号名与用量百分比，状态一目了然。
 - **账号面板** — 点击菜单栏图标展开悬浮面板，展示当前账号详情、用量进度条、其他账号列表。
-- **一键切换** — 从其他账号列表直接切换活跃账号，支持切换前确认提醒。
-- **用量追踪** — 直观显示各账号的主/次用量窗口、剩余百分比、额度重置时间。
-- **API / 本地双刷新** — 支持 API 实时刷新与离线本地刷新；数据来源清晰标注。
+- **账户管理** — 导入 auth.json(标准 / CPA / purge 重建)、导出快照(标准 / CPA)、编辑别名、移除账号、复制邮箱，全部可视化操作。
+- **登录** — device-auth 登录流(验证 URL + 一次性码)或 Terminal 回退。
+- **一键切换** — 从账号列表直接切换活跃账号(含切回上一个账号)，支持切换前确认提醒与重启提示。
+- **用量追踪** — 直观显示各账号的主/次用量窗口、剩余百分比、额度重置时间；容量越过阈值时可发系统通知。
+- **API / 本地双刷新** — 支持 API 实时刷新与离线本地刷新(首次 API 刷新前展示隐私披露)；数据来源清晰标注。
+- **CLI 安装向导** — 首次启动(或 App 更新后)引导把内置 `codex-auth` 安装/覆盖到系统 PATH 目录。
+- **启动 Codex App** — 一键以 `codex-auth app` 等价方式启动 Codex App。
 - **深浅色模式** — Liquid Glass 毛玻璃表面 + 自适应深浅色方案，原生 macOS 视觉体验。
-- **后台定时刷新** — 每 5 分钟自动刷新账号状态。
+- **后台定时刷新** — 每 5 分钟自动刷新(可配置；默认仅在线时刷新)。
 
 ## 产品需求与 JSON 接口
 
@@ -27,7 +31,7 @@ CodexSwitcher **不直接操作** `~/.codex` 账号存储；所有读写均通�
 
 从 [Releases](../../release/) 页面下载最新的 `CodexSwitcher-*.dmg`，将 `CodexSwitcher.app` 拖入 `Applications` 文件夹即可。
 
-> **依赖**：需要已安装 `codex-auth` CLI（`npm install -g @loongphy/codex-auth`），否则应用将显示 CLI 不可用的引导提示。
+> **依赖**：App 内置 `codex-auth` CLI(随包分发)，无需预装；首次启动会引导将其安装到系统 PATH 目录以便终端使用。
 
 ## 界面说明
 
@@ -39,7 +43,7 @@ CodexSwitcher **不直接操作** `~/.codex` 账号存储；所有读写均通�
 
 1. **顶部栏** — 应用标题 "Codex Switcher" + 刷新按钮。刷新时显示进度状态。
 2. **当前账号卡片** — 头像（首字母 + 渐变色）、别名、邮箱、Plan 徽章（Plus / Pro / Free）、数据来源徽章（API / Local / Cache / Offline）、剩余百分比大字号显示、主/次用量进度条、额度信息、更新时间。
-3. **其他账号列表** — 每个账号显示头像、别名、邮箱、用量百分比徽章、`⋯` 操作菜单（切换账号 / 复制邮箱 / 移除账号）。
+3. **其他账号列表** — 每个账号显示头像、别名、邮箱、用量百分比徽章、`⋯` 操作菜单（切换账号 / 编辑别名 / 复制邮箱 / 移除账号）。顶部栏提供 API/本地刷新、导入/导出、登录、切回上一个账号、启动 Codex App 等入口。
 
 底部栏显示最近同步时间和账号总数，以及退出按钮。
 
@@ -51,7 +55,12 @@ CodexSwitcher **不直接操作** `~/.codex` 账号存储；所有读写均通�
 
 - **Low Capacity Threshold** — 低容量警告阈值（默认 20%，可调；0% 始终为严重状态）
 - **Confirm before switching** — 切换前是否弹出确认对话框
+- **Notify when capacity crosses the threshold** — 容量越过阈值时发送系统通知
+- **Background refresh only when online** — 后台刷新网络感知策略
+- **Refresh interval** — 后台刷新间隔
 - **Codex Auth Path** — 自定义 `codex-auth` 可执行文件路径（默认从 PATH 发现）
+- **Command Line Tool** — 内置/已装版本展示与一键安装/更新（本地版本更新时覆盖前确认）
+- **Accounts** — 导入 / 导出 / 维护（清理备份、Live TUI 刷新间隔）
 - **Launch at login** — 登录时自动启动
 
 ## 状态语义
@@ -88,10 +97,14 @@ Sources/CodexSwitcher/
 │   │   ├── CurrentAccountCard.swift   # 当前账号卡片
 │   │   ├── AccountRowView.swift       # 其他账号行
 │   │   └── UsageProgressRow.swift     # 用量进度条
+│   ├── Accounts/           # 账户管理面板
+│   │   ├── AccountManagementViews.swift
+│   │   └── LoginSheet.swift
 │   └── Settings/
 │       └── SettingsView.swift
 ├── Infrastructure/         # CLI 进程客户端
 │   ├── CLIProcessService.swift
+│   ├── CLIInstaller.swift
 │   └── AccountMapper.swift
 └── Models/                 # JSON 契约模型
     ├── CLIResponseModels.swift

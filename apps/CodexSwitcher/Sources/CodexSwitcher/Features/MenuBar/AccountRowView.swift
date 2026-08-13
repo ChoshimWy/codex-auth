@@ -10,7 +10,15 @@ import SwiftUI
 struct AccountRowView: View {
     let account: CodexAccount
     let isSwitching: Bool
+    let isRemoving: Bool
+    /// `state_uncertain` 锁定或能力探测不支持时禁用对应变更项(FR-13)。
+    let switchDisabled: Bool
+    let aliasDisabled: Bool
+    let removeDisabled: Bool
     let onSwitch: () -> Void
+    let onCopyEmail: () -> Void
+    let onEditAlias: () -> Void
+    let onRemove: () -> Void
 
     var body: some View {
         HStack(spacing: AppSpacing.sm) {
@@ -85,18 +93,25 @@ struct AccountRowView: View {
 
     // MARK: - More Menu
 
-    /// ⋯ menu — contains Switch, Edit, Copy, Remove actions.
+    /// ⋯ menu — contains Switch, Copy, Remove actions.
     private var moreMenu: some View {
         Menu {
             if isSwitching {
                 Text(L10n.rowSwitching)
+            } else if isRemoving {
+                Text(L10n.rowRemoving)
             } else {
                 Button(L10n.rowSwitch, action: onSwitch)
+                    .disabled(switchDisabled)
             }
             Divider()
-            Button(L10n.rowCopyEmail) {}
+            Button(L10n.rowEditAlias, action: onEditAlias)
+                .disabled(aliasDisabled)
             Divider()
-            Button(L10n.rowRemove, role: .destructive) {}
+            Button(L10n.rowCopyEmail, action: onCopyEmail)
+            Divider()
+            Button(L10n.rowRemove, role: .destructive, action: onRemove)
+                .disabled(removeDisabled)
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 14, weight: .medium))

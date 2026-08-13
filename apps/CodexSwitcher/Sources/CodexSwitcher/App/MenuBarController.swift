@@ -117,7 +117,7 @@ final class MenuBarController: NSObject {
         if popover.isShown {
             popover.performClose(nil)
         } else {
-            Task { await store.refresh() }
+            Task { await store.refresh(userInitiated: true) }
             popover.show(
                 relativeTo: button.bounds,
                 of: button,
