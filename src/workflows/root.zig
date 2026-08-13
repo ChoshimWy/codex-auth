@@ -144,7 +144,10 @@ fn runMain(init: std.process.Init.Minimal) !void {
     defer if (codex_home) |path| allocator.free(path);
 
     switch (cmd) {
-        .version => try cli.output.printVersion(),
+        .version => |opts| if (opts.json)
+            try cli.json_output.printVersionResult()
+        else
+            try cli.output.printVersion(),
         .help => |topic| switch (topic) {
             .top_level => try help_workflow.handleTopLevelHelp(),
             else => try cli.help.printCommandHelp(topic),
@@ -167,6 +170,20 @@ fn commandWantsJson(cmd: *const cli.types.Command) bool {
         .list => |opts| opts.json,
         .switch_account => |opts| opts.json,
         .remove_account => |opts| opts.json,
+        .alias => |opts| switch (opts) {
+            .set => |set_opts| set_opts.json,
+            .clear => |clear_opts| clear_opts.json,
+        },
+        .import_auth => |opts| opts.json,
+        .export_auth => |opts| opts.json,
+        .app => |opts| opts.json,
+        .login => |opts| opts.json,
+        .clean => |opts| opts.json,
+        .config => |opts| switch (opts) {
+            .live => |live_opts| live_opts.json,
+            .get => |get_opts| get_opts.json,
+        },
+        .version => |opts| opts.json,
         else => false,
     };
 }

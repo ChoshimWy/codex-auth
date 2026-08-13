@@ -695,6 +695,7 @@ test "Scenario: Given config live interval when parsing then interval is preserv
         .command => |cmd| switch (cmd) {
             .config => |opts| switch (opts) {
                 .live => |live_opts| try std.testing.expectEqual(@as(u16, 30), live_opts.interval_seconds),
+                .get => return error.TestExpectedEqual,
             },
             else => return error.TestExpectedEqual,
         },
@@ -1104,7 +1105,7 @@ test "Scenario: Given switch json query when parsing then query target and json 
     }
 }
 
-test "Scenario: Given switch dash with json when parsing then previous switching is rejected" {
+test "Scenario: Given switch dash with json when parsing then previous switching is rejected with guidance" {
     const gpa = std.testing.allocator;
     const args = [_][:0]const u8{ "codex-auth", "switch", "-", "--json" };
     var result = try cli.commands.parseArgs(gpa, &args);
@@ -1113,22 +1114,28 @@ test "Scenario: Given switch dash with json when parsing then previous switching
     switch (result) {
         .usage_error => |usage_err| {
             try std.testing.expect(usage_err.json);
-            try std.testing.expect(std.mem.indexOf(u8, usage_err.message, "previous-account switching is CLI-only") != null);
+            try std.testing.expect(std.mem.indexOf(u8, usage_err.message, "`switch -` is CLI-only; use `switch --previous --json`") != null);
         },
         else => return error.TestExpectedEqual,
     }
 }
 
-test "Scenario: Given switch previous flag with json when parsing then the unsupported flag is rejected" {
+test "Scenario: Given switch previous flag with json when parsing then previous target is preserved" {
     const gpa = std.testing.allocator;
     const args = [_][:0]const u8{ "codex-auth", "switch", "--previous", "--json" };
     var result = try cli.commands.parseArgs(gpa, &args);
     defer cli.commands.freeParseResult(gpa, &result);
 
     switch (result) {
-        .usage_error => |usage_err| {
-            try std.testing.expect(usage_err.json);
-            try std.testing.expect(std.mem.indexOf(u8, usage_err.message, "unknown flag `--previous`") != null);
+        .command => |cmd| switch (cmd) {
+            .switch_account => |opts| {
+                try std.testing.expect(opts.json);
+                switch (opts.target) {
+                    .previous => {},
+                    else => return error.TestExpectedEqual,
+                }
+            },
+            else => return error.TestExpectedEqual,
         },
         else => return error.TestExpectedEqual,
     }

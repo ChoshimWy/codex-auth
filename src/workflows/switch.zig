@@ -158,7 +158,7 @@ fn handleSwitchPrevious(
     codex_home: []const u8,
     opts: cli.types.SwitchOptions,
 ) !void {
-    std.debug.assert(!opts.json);
+    if (opts.json) return handleSwitchPreviousJson(allocator, codex_home);
     std.debug.assert(opts.api_mode == .default);
     std.debug.assert(!opts.live);
 
@@ -192,18 +192,65 @@ fn handleSwitchPrevious(
     try cli.output.printSwitchedAccount(allocator, &reg, previous_account_key);
 }
 
+fn handleSwitchPreviousJson(
+    allocator: std.mem.Allocator,
+    codex_home: []const u8,
+) !void {
+    var reg = registry.loadRegistry(allocator, codex_home) catch |err|
+        return cli.json_output.printJsonWorkflowError(err);
+    defer reg.deinit(allocator);
+    if (registry.syncActiveAccountFromAuth(allocator, codex_home, &reg) catch |err|
+        return cli.json_output.printJsonWorkflowError(err))
+    {
+        registry.saveRegistry(allocator, codex_home, &reg) catch |err|
+            return cli.json_output.printJsonWorkflowError(err);
+    }
+
+    const previous_account_key_value = reg.previous_active_account_key orelse {
+        try cli.json_output.printError("no_previous_account", "no previous active account is recorded", null);
+        return error.NoPreviousAccount;
+    };
+    const previous_account_key = try allocator.dupe(u8, previous_account_key_value);
+    defer allocator.free(previous_account_key);
+
+    if (registry.findAccountIndexByAccountKey(&reg, previous_account_key) == null) {
+        try cli.json_output.printError("previous_account_unavailable", "the previous active account is no longer available", null);
+        return error.PreviousAccountUnavailable;
+    }
+
+    if (reg.active_account_key) |active_account_key| {
+        if (std.mem.eql(u8, active_account_key, previous_account_key)) {
+            try cli.json_output.printError("no_previous_account", "the previous active account is already active", null);
+            return error.NoPreviousAccount;
+        }
+    }
+
+    registry.activateAccountByKey(allocator, codex_home, &reg, previous_account_key) catch |err|
+        return cli.json_output.printJsonMutationError(err, "the switch operation could not be completed; stored state may have changed; run `list --json` before retrying");
+    registry.saveRegistry(allocator, codex_home, &reg) catch |err|
+        return cli.json_output.printJsonMutationError(err, "the switch operation could not be completed; stored state may have changed; run `list --json` before retrying");
+
+    var result = results.buildSwitchResult(
+        allocator,
+        &reg,
+        previous_account_key,
+    ) catch |err| return cli.json_output.printJsonWorkflowError(err);
+    defer result.deinit(allocator);
+    try cli.json_output.printSwitchResult(&result);
+}
+
 fn handleSwitchQueryJson(
     allocator: std.mem.Allocator,
     codex_home: []const u8,
     query: []const u8,
 ) !void {
-    var reg = registry.loadRegistry(allocator, codex_home) catch |err| return printJsonWorkflowError(err);
+    var reg = registry.loadRegistry(allocator, codex_home) catch |err| return cli.json_output.printJsonWorkflowError(err);
     defer reg.deinit(allocator);
-    if (registry.syncActiveAccountFromAuth(allocator, codex_home, &reg) catch |err| return printJsonWorkflowError(err)) {
-        registry.saveRegistry(allocator, codex_home, &reg) catch |err| return printJsonWorkflowError(err);
+    if (registry.syncActiveAccountFromAuth(allocator, codex_home, &reg) catch |err| return cli.json_output.printJsonWorkflowError(err)) {
+        registry.saveRegistry(allocator, codex_home, &reg) catch |err| return cli.json_output.printJsonWorkflowError(err);
     }
 
-    var resolution = resolveSwitchQueryLocally(allocator, &reg, query) catch |err| return printJsonWorkflowError(err);
+    var resolution = resolveSwitchQueryLocally(allocator, &reg, query) catch |err| return cli.json_output.printJsonWorkflowError(err);
     defer resolution.deinit(allocator);
 
     const selected_account_key = switch (resolution) {
@@ -224,42 +271,14 @@ fn handleSwitchQueryJson(
         },
     };
 
-    registry.activateAccountByKey(allocator, codex_home, &reg, selected_account_key) catch |err| return printJsonMutationError(err);
-    registry.saveRegistry(allocator, codex_home, &reg) catch |err| return printJsonMutationError(err);
+    registry.activateAccountByKey(allocator, codex_home, &reg, selected_account_key) catch |err| return cli.json_output.printJsonMutationError(err, "the switch operation could not be completed; stored state may have changed; run `list --json` before retrying");
+    registry.saveRegistry(allocator, codex_home, &reg) catch |err| return cli.json_output.printJsonMutationError(err, "the switch operation could not be completed; stored state may have changed; run `list --json` before retrying");
 
     var result = results.buildSwitchResult(
         allocator,
         &reg,
         selected_account_key,
-    ) catch |err| return printJsonWorkflowError(err);
+    ) catch |err| return cli.json_output.printJsonWorkflowError(err);
     defer result.deinit(allocator);
     try cli.json_output.printSwitchResult(&result);
-}
-
-fn printJsonWorkflowError(err: anyerror) anyerror {
-    switch (err) {
-        error.OutOfMemory => return err,
-        error.CurlRequired => {
-            try cli.json_output.printError(
-                "curl_unavailable",
-                "curl is required for API-backed refresh. Install curl or use --skip-api.",
-                null,
-            );
-            return err;
-        },
-        else => {
-            try cli.json_output.printError("registry_error", @errorName(err), null);
-            return error.RegistryError;
-        },
-    }
-}
-
-fn printJsonMutationError(err: anyerror) anyerror {
-    if (err == error.OutOfMemory) return err;
-    try cli.json_output.printError(
-        "state_uncertain",
-        "the switch operation could not be completed; stored state may have changed; run `list --json` before retrying",
-        null,
-    );
-    return error.StateUncertain;
 }

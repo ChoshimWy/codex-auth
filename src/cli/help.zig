@@ -35,20 +35,24 @@ pub fn writeHelp(
 
     try writeCommandSummary(out, use_color, "--help, -h", "Show this help");
     try writeCommandSummary(out, use_color, "help <command>", "Show command-specific help");
-    try writeCommandSummary(out, use_color, "--version, -V", "Show version");
+    try writeCommandSummary(out, use_color, "--version, -V", "Show version (add --json for a machine-readable capability probe)");
     try writeCommandSummary(out, use_color, "-", "Switch to the previous active account");
     try writeCommandSummary(out, use_color, "list [--live] [--active] [--api|--skip-api] [--json]", "List available accounts");
     try writeCommandSummary(out, use_color, "login [--device-auth]", "Login and add the current account");
+    try writeCommandDetail(out, use_color, "login --device-auth --json");
     try writeCommandSummary(out, use_color, "import", "Import auth files or rebuild registry");
     try writeCommandDetail(out, use_color, "import <path> [--alias <alias>]");
     try writeCommandDetail(out, use_color, "import --cpa [<path>] [--alias <alias>]");
     try writeCommandDetail(out, use_color, "import --purge [<path>]");
+    try writeCommandDetail(out, use_color, "import (<path>|--cpa [<path>]|--purge [<path>]) --json");
     try writeCommandSummary(out, use_color, "export [<dir>] [--cpa]", "Export stored account auth files");
+    try writeCommandDetail(out, use_color, "export [<dir>] [--cpa] --json");
     try writeCommandSummary(out, use_color, "switch", "Switch the active account");
     try writeCommandDetail(out, use_color, "switch -");
     try writeCommandDetail(out, use_color, "switch [--live] [--api|--skip-api]");
     try writeCommandDetail(out, use_color, "switch <alias|email|display-number|query>");
     try writeCommandDetail(out, use_color, "switch <query> --json");
+    try writeCommandDetail(out, use_color, "switch --previous --json");
     try writeCommandSummary(out, use_color, "remove", "Remove one or more accounts");
     try writeCommandDetail(out, use_color, "remove [--live] [--api|--skip-api]");
     try writeCommandDetail(out, use_color, "remove <alias|email|display-number|query>...");
@@ -57,11 +61,16 @@ pub fn writeHelp(
     try writeCommandSummary(out, use_color, "alias", "Set or clear account aliases");
     try writeCommandDetail(out, use_color, "alias set <alias|email|display-number|query> <alias>");
     try writeCommandDetail(out, use_color, "alias clear <alias|email|display-number|query>");
+    try writeCommandDetail(out, use_color, "alias set <alias|email|display-number|query> <alias> --json");
+    try writeCommandDetail(out, use_color, "alias clear <alias|email|display-number|query> --json");
     try writeCommandSummary(out, use_color, "clean", "Delete backup and stale files under accounts/");
     try writeCommandDetail(out, use_color, "clean background");
+    try writeCommandDetail(out, use_color, "clean [background] --json");
     try writeCommandSummary(out, use_color, "config", "Manage configuration");
     try writeCommandDetail(out, use_color, "config live --interval <seconds>");
+    try writeCommandDetail(out, use_color, "config get --json");
     try writeCommandSummary(out, use_color, "app", "Launch Codex App with CLI overrides");
+    try writeCommandDetail(out, use_color, "app [--id <id>] [--codex-cli-path <path>] [--codex-home <path>] --json");
 
     try out.writeAll("\n");
     if (use_color) try out.writeAll(style.ansi.cyan);
@@ -199,21 +208,25 @@ fn writeUsageLines(out: *std.Io.Writer, topic: HelpTopic) !void {
         .login => {
             try out.writeAll("  codex-auth login\n");
             try out.writeAll("  codex-auth login --device-auth\n");
+            try out.writeAll("  codex-auth login --device-auth --json\n");
         },
         .import_auth => {
             try out.writeAll("  codex-auth import <path> [--alias <alias>]\n");
             try out.writeAll("  codex-auth import --cpa [<path>] [--alias <alias>]\n");
             try out.writeAll("  codex-auth import --purge [<path>]\n");
+            try out.writeAll("  codex-auth import (<path>|--cpa [<path>]|--purge [<path>]) --json\n");
         },
         .export_auth => {
             try out.writeAll("  codex-auth export [<dir>]\n");
             try out.writeAll("  codex-auth export --cpa [<dir>]\n");
+            try out.writeAll("  codex-auth export [<dir>] [--cpa] --json\n");
         },
         .switch_account => {
             try out.writeAll("  codex-auth switch -\n");
             try out.writeAll("  codex-auth switch [--live] [--api|--skip-api]\n");
             try out.writeAll("  codex-auth switch <alias|email|display-number|query>\n");
             try out.writeAll("  codex-auth switch <query> --json\n");
+            try out.writeAll("  codex-auth switch --previous --json\n");
         },
         .remove_account => {
             try out.writeAll("  codex-auth remove [--live] [--api|--skip-api]\n");
@@ -224,16 +237,22 @@ fn writeUsageLines(out: *std.Io.Writer, topic: HelpTopic) !void {
         .alias => {
             try out.writeAll("  codex-auth alias set <alias|email|display-number|query> <alias>\n");
             try out.writeAll("  codex-auth alias clear <alias|email|display-number|query>\n");
+            try out.writeAll("  codex-auth alias set <alias|email|display-number|query> <alias> --json\n");
+            try out.writeAll("  codex-auth alias clear <alias|email|display-number|query> --json\n");
         },
         .clean => {
             try out.writeAll("  codex-auth clean\n");
             try out.writeAll("  codex-auth clean background\n");
+            try out.writeAll("  codex-auth clean [background] --json\n");
         },
         .config => {
             try out.writeAll("  codex-auth config live --interval <seconds>\n");
+            try out.writeAll("  codex-auth config live --interval <seconds> --json\n");
+            try out.writeAll("  codex-auth config get --json\n");
         },
         .app => {
             try out.writeAll("  codex-auth app [--id <id>] [--codex-cli-path <path>] [--codex-home <path>] [--platform win|wsl|mac]\n");
+            try out.writeAll("  codex-auth app [--id <id>] [--codex-cli-path <path>] [--codex-home <path>] --json\n");
         },
     }
 }
@@ -271,16 +290,19 @@ fn writeOptionLines(out: *std.Io.Writer, topic: HelpTopic) !void {
         },
         .login => {
             try out.writeAll("  --device-auth   Run `codex login --device-auth` before adding the account.\n");
+            try out.writeAll("  --json          Drive the device-auth flow with machine-readable phase documents. Requires --device-auth.\n");
         },
         .import_auth => {
             try out.writeAll("  <path>           Import one auth file or every supported auth file in a directory.\n");
             try out.writeAll("  --cpa [<path>]   Import CPA flat token JSON from a file or directory. Uses `~/.cli-proxy-api` when omitted.\n");
             try out.writeAll("  --alias <alias>  Set an alias for a single imported account.\n");
             try out.writeAll("  --purge [<path>] Rebuild `registry.json` from auth files. Uses the accounts directory when omitted.\n");
+            try out.writeAll("  --json            Emit one machine-readable JSON document for non-interactive import.\n");
         },
         .export_auth => {
             try out.writeAll("  <dir>   Directory to write exported account files. Uses `CODEX_HOME/accounts/backup` when omitted.\n");
             try out.writeAll("  --cpa   Export CPA flat token JSON. Without this, exports Codex auth snapshots.\n");
+            try out.writeAll("  --json  Emit one machine-readable JSON document for non-interactive export.\n");
         },
         .switch_account => {
             try out.writeAll("  --live       Open the live switch UI.\n");
@@ -290,6 +312,7 @@ fn writeOptionLines(out: *std.Io.Writer, topic: HelpTopic) !void {
             try out.writeAll("  <alias|email|display-number|query>\n");
             try out.writeAll("               Switch directly when the target resolves to one account.\n");
             try out.writeAll("  -            Switch to the previous active account.\n");
+            try out.writeAll("  --previous   Switch to the previous active account (JSON mode).\n");
         },
         .remove_account => {
             try out.writeAll("  --live       Open the live remove UI.\n");
@@ -305,10 +328,12 @@ fn writeOptionLines(out: *std.Io.Writer, topic: HelpTopic) !void {
             try out.writeAll("                    Set one stored account alias without remote refresh.\n");
             try out.writeAll("  clear <selector>\n");
             try out.writeAll("                    Remove one stored account alias without remote refresh.\n");
+            try out.writeAll("  --json            Emit one machine-readable JSON document for non-interactive alias changes.\n");
         },
         .config => {
             try out.writeAll("  live --interval <seconds>\n");
             try out.writeAll("                    Set the live TUI refresh interval from 5 to 3600 seconds.\n");
+            try out.writeAll("  get               Read the current configuration as one JSON document (requires --json).\n");
         },
         .app => {
             try out.writeAll("  --id <id>          Windows package/AUMID or macOS bundle identifier.\n");
@@ -319,6 +344,7 @@ fn writeOptionLines(out: *std.Io.Writer, topic: HelpTopic) !void {
             try out.writeAll("  --platform win|wsl|mac\n");
             try out.writeAll("                     Preselect the app platform. Defaults to the current app setting on Windows and mac on macOS.\n");
             try out.writeAll("  --std              Resolve the app package executable, then attach stdout/stderr to this terminal.\n");
+            try out.writeAll("  --json             Emit one machine-readable JSON document reporting the launch result.\n");
         },
         else => {},
     }
@@ -409,6 +435,8 @@ fn writeNotesSectionStyled(out: *std.Io.Writer, use_color: bool, topic: HelpTopi
         .alias => {
             try out.writeAll("  Alias targets can be aliases, emails, display numbers, or partial queries.\n");
             try out.writeAll("  New aliases cannot be empty or only digits.\n");
+            try out.writeAll("  With --json, ambiguous targets fail with an error instead of opening a picker.\n");
+            try out.writeAll("  --json is consumed as a flag wherever it appears; it cannot be a selector or alias value.\n");
         },
         else => {},
     }

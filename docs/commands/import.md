@@ -44,3 +44,26 @@ Use `--purge` as a recovery tool when the registry index is out of sync with the
 - `stderr` receives skipped rows and warnings.
 - Parse failures render as `InvalidJSON`.
 - Validation failures keep explicit names such as `MissingEmail` or `MissingChatgptUserId`.
+
+## JSON Output
+
+```shell
+codex-auth import <path> [--alias <alias>] --json
+codex-auth import --cpa [<path>] --json
+codex-auth import --purge [<path>] --json
+```
+
+- The success document reports the `mode` (`standard`, `cpa`, `purge`), the
+  resolved `source`, one `results` row per file event (`path`, `status` =
+  `imported`/`updated`/`skipped`, optional `email`, optional `reason`), the
+  aggregate `imported_count`/`updated_count`/`skipped_count`, and the
+  registry's `active_account_key` after the import. Purge success adds
+  `"registry_rebuilt": true`.
+- Per-file failures stay result rows for multi-file scans; a single-file
+  import that fails validation escalates to a command-level `registry_error`
+  (the engine's `fail_report_on_malformed` behavior, shared with the human
+  CLI). An unreadable import source is a handled `path_unreadable` error.
+- Imported accounts do not become active. Run `list --json` after an import
+  to reconcile rows.
+
+See [json-api.md](../json-api.md) for the versioned contract.

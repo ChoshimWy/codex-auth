@@ -491,3 +491,166 @@ pub fn runCodexLogin(opts: types.LoginOptions, codex_home: []const u8) !void {
     };
     try ensureCodexLoginSucceeded(term);
 }
+
+/// Device authorization details captured from the `codex login --device-auth`
+/// child output. The CLI owns this parsing; the capture tolerates ANSI color
+/// codes and accepts any `https://auth.openai.com/…` URL plus a `XXXX-XXXX`
+/// shaped code line.
+pub const DeviceAuthInfo = struct {
+    verification_url: []u8,
+    user_code: []u8,
+
+    pub fn deinit(self: *DeviceAuthInfo, allocator: std.mem.Allocator) void {
+        allocator.free(self.verification_url);
+        allocator.free(self.user_code);
+        self.* = undefined;
+    }
+};
+
+/// A `codex login` child spawned with piped stdout for the JSON login flow.
+/// The caller reads lines until the device info is captured, prints the
+/// awaiting-user document, then calls `finish` to drain and wait.
+pub const CapturedCodexLogin = struct {
+    child: std.process.Child,
+    stdout_file: std.Io.File,
+    pending: std.ArrayList(u8),
+
+    pub fn init(child: std.process.Child) CapturedCodexLogin {
+        return .{
+            .child = child,
+            .stdout_file = child.stdout.?,
+            .pending = std.ArrayList(u8).empty,
+        };
+    }
+
+    pub fn deinit(self: *CapturedCodexLogin, allocator: std.mem.Allocator) void {
+        self.pending.deinit(allocator);
+        self.* = undefined;
+    }
+
+    /// Kill the child without waiting; used when the flow is abandoned.
+    pub fn abandon(self: *CapturedCodexLogin) void {
+        self.child.kill(app_runtime.io());
+    }
+
+    /// Read one child stdout line (without the newline). Returns null at EOF.
+    /// Bytes past the last newline stay buffered in `pending`.
+    pub fn readLine(self: *CapturedCodexLogin, allocator: std.mem.Allocator) !?[]u8 {
+        var chunk: [256]u8 = undefined;
+        while (true) {
+            if (std.mem.indexOfScalar(u8, self.pending.items, '\n')) |pos| {
+                const line = try allocator.dupe(u8, self.pending.items[0..pos]);
+                std.mem.copyForwards(u8, self.pending.items, self.pending.items[pos + 1 ..]);
+                self.pending.items.len -= pos + 1;
+                return line;
+            }
+            const n = self.stdout_file.readStreaming(app_runtime.io(), &.{&chunk}) catch |err| switch (err) {
+                error.EndOfStream => 0,
+                else => return err,
+            };
+            if (n == 0) {
+                if (self.pending.items.len == 0) return null;
+                return try self.pending.toOwnedSlice(allocator);
+            }
+            try self.pending.appendSlice(allocator, chunk[0..n]);
+        }
+    }
+
+    /// Drain remaining child stdout and wait for termination. `wait` closes
+    /// the piped stdout handle, so the caller must not close it again.
+    pub fn finish(self: *CapturedCodexLogin, allocator: std.mem.Allocator) !std.process.Child.Term {
+        while (try self.readLine(allocator)) |line| allocator.free(line);
+        return self.child.wait(app_runtime.io());
+    }
+};
+
+pub fn spawnCodexLoginCapture(
+    allocator: std.mem.Allocator,
+    opts: types.LoginOptions,
+    codex_home: []const u8,
+) !CapturedCodexLogin {
+    var env_map = try app_runtime.currentEnviron().createMap(allocator);
+    defer env_map.deinit();
+    try env_map.put("CODEX_HOME", codex_home);
+
+    var launch = try buildCodexLaunchAlloc(allocator, opts);
+    defer launch.deinit(allocator);
+
+    const child = try std.process.spawn(app_runtime.io(), .{
+        .argv = launch.argv(),
+        .environ_map = &env_map,
+        .stdin = .inherit,
+        .stdout = .pipe,
+        .stderr = .inherit,
+    });
+    return CapturedCodexLogin.init(child);
+}
+
+/// Read child stdout until both the verification URL and the user code are
+/// captured. Returns null at EOF when either is missing.
+pub fn captureDeviceAuthInfo(
+    allocator: std.mem.Allocator,
+    captured: *CapturedCodexLogin,
+) !?DeviceAuthInfo {
+    var url: ?[]u8 = null;
+    var code: ?[]u8 = null;
+    errdefer {
+        if (url) |value| allocator.free(value);
+        if (code) |value| allocator.free(value);
+    }
+
+    while (try captured.readLine(allocator)) |raw_line| {
+        defer allocator.free(raw_line);
+        const cleaned = try stripAnsiAlloc(allocator, raw_line);
+        defer allocator.free(cleaned);
+        const line = std.mem.trim(u8, cleaned, " \t\r");
+        if (url == null) {
+            if (extractVerificationUrl(line)) |start| {
+                url = try allocator.dupe(u8, line[start..]);
+            }
+        } else if (code == null and isDeviceCodeShape(line)) {
+            code = try allocator.dupe(u8, line);
+        }
+        if (url != null and code != null) break;
+    }
+
+    if (url == null or code == null) return null;
+    return .{ .verification_url = url.?, .user_code = code.? };
+}
+
+fn stripAnsiAlloc(allocator: std.mem.Allocator, line: []const u8) ![]u8 {
+    var out = std.ArrayList(u8).empty;
+    errdefer out.deinit(allocator);
+    var i: usize = 0;
+    while (i < line.len) {
+        if (line[i] == 0x1b and i + 1 < line.len and line[i + 1] == '[') {
+            i += 2;
+            while (i < line.len and line[i] != 'm') i += 1;
+            if (i < line.len) i += 1;
+            continue;
+        }
+        try out.append(allocator, line[i]);
+        i += 1;
+    }
+    return try out.toOwnedSlice(allocator);
+}
+
+/// Returns the byte offset of an embedded `https://auth.openai.com/…` URL
+/// within the line, or null. The URL may sit at the start of the line (the
+/// shape codex 0.147.0 prints) or inside explanatory text; the marker itself
+/// starts with `https://`, so the offset is the URL start.
+fn extractVerificationUrl(line: []const u8) ?usize {
+    return std.mem.indexOf(u8, line, "https://auth.openai.com");
+}
+
+fn isDeviceCodeShape(line: []const u8) bool {
+    const dash = std.mem.indexOfScalar(u8, line, '-') orelse return false;
+    if (dash < 3 or dash > 8) return false;
+    const tail_len = line.len - dash - 1;
+    if (tail_len < 3 or tail_len > 8) return false;
+    for (line, 0..) |ch, idx| {
+        if (idx == dash) continue;
+        if (!std.ascii.isAlphanumeric(ch)) return false;
+    }
+    return true;
+}

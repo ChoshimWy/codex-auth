@@ -249,11 +249,11 @@ pub fn handleRemove(allocator: std.mem.Allocator, codex_home: []const u8, opts: 
 }
 
 fn handleRemoveJson(allocator: std.mem.Allocator, codex_home: []const u8, opts: cli.types.RemoveOptions) !void {
-    var reg = registry.loadRegistry(allocator, codex_home) catch |err| return printJsonWorkflowError(err);
+    var reg = registry.loadRegistry(allocator, codex_home) catch |err| return cli.json_output.printJsonWorkflowError(err);
     defer reg.deinit(allocator);
 
-    if (registry.syncActiveAccountFromAuth(allocator, codex_home, &reg) catch |err| return printJsonWorkflowError(err)) {
-        registry.saveRegistry(allocator, codex_home, &reg) catch |err| return printJsonWorkflowError(err);
+    if (registry.syncActiveAccountFromAuth(allocator, codex_home, &reg) catch |err| return cli.json_output.printJsonWorkflowError(err)) {
+        registry.saveRegistry(allocator, codex_home, &reg) catch |err| return cli.json_output.printJsonWorkflowError(err);
     }
 
     var selected: []usize = undefined;
@@ -264,10 +264,10 @@ fn handleRemoveJson(allocator: std.mem.Allocator, codex_home: []const u8, opts: 
         selected_owned = true;
         for (selected, 0..) |*slot, idx| slot.* = idx;
     } else {
-        var resolution_set = resolveRemoveSelectors(allocator, &reg, opts.selectors) catch |err| return printJsonWorkflowError(err);
+        var resolution_set = resolveRemoveSelectors(allocator, &reg, opts.selectors) catch |err| return cli.json_output.printJsonWorkflowError(err);
         defer resolution_set.deinit(allocator);
         if (resolution_set.hasNotFound() or resolution_set.hasAmbiguous()) {
-            const resolution_views = buildSelectorResolutionViews(allocator, &reg, resolution_set.resolutions) catch |err| return printJsonWorkflowError(err);
+            const resolution_views = buildSelectorResolutionViews(allocator, &reg, resolution_set.resolutions) catch |err| return cli.json_output.printJsonWorkflowError(err);
             defer results.deinitSelectorResolutionViews(allocator, resolution_views);
             try cli.json_output.printSelectorResolutionError(resolution_views);
             return error.SelectorResolutionFailed;
@@ -276,12 +276,12 @@ fn handleRemoveJson(allocator: std.mem.Allocator, codex_home: []const u8, opts: 
         selected_owned = true;
     }
 
-    const removed_views = results.buildAccountViewsForIndices(allocator, &reg, null, selected) catch |err| return printJsonWorkflowError(err);
+    const removed_views = results.buildAccountViewsForIndices(allocator, &reg, null, selected) catch |err| return cli.json_output.printJsonWorkflowError(err);
     var removed_views_owned = true;
     defer if (removed_views_owned) results.deinitAccountViews(allocator, removed_views);
 
     if (selected.len != 0) {
-        removeSelectedAccountsAndPersist(allocator, codex_home, &reg, selected, opts.all) catch |err| return printJsonMutationError(err);
+        removeSelectedAccountsAndPersist(allocator, codex_home, &reg, selected, opts.all) catch |err| return cli.json_output.printJsonMutationError(err, "the remove operation could not be completed; stored state may have changed; run `list --json` before retrying");
     }
 
     var result: results.RemoveResult = .{
@@ -407,32 +407,4 @@ fn buildSelectorResolutionViews(
 
 fn optionalDupe(allocator: std.mem.Allocator, value: ?[]const u8) !?[]u8 {
     return if (value) |text| try allocator.dupe(u8, text) else null;
-}
-
-fn printJsonWorkflowError(err: anyerror) anyerror {
-    switch (err) {
-        error.OutOfMemory => return err,
-        error.CurlRequired => {
-            try cli.json_output.printError(
-                "curl_unavailable",
-                "curl is required for API-backed refresh. Install curl or use --skip-api.",
-                null,
-            );
-            return err;
-        },
-        else => {
-            try cli.json_output.printError("registry_error", @errorName(err), null);
-            return error.RegistryError;
-        },
-    }
-}
-
-fn printJsonMutationError(err: anyerror) anyerror {
-    if (err == error.OutOfMemory) return err;
-    try cli.json_output.printError(
-        "state_uncertain",
-        "the remove operation could not be completed; stored state may have changed; run `list --json` before retrying",
-        null,
-    );
-    return error.StateUncertain;
 }

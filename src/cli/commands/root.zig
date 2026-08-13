@@ -30,13 +30,23 @@ pub fn parseArgs(allocator: std.mem.Allocator, args: []const [:0]const u8) !type
     if (std.mem.eql(u8, cmd, "help")) return parseHelpArgs(allocator, args[2..]);
 
     if (std.mem.eql(u8, cmd, "--version") or std.mem.eql(u8, cmd, "-V")) {
-        if (args.len > 2) {
-            return common.usageErrorResult(allocator, .top_level, "unexpected argument after `{s}`: `{s}`.", .{
+        var json_count: usize = 0;
+        for (args[2..]) |raw_arg| {
+            if (std.mem.eql(u8, std.mem.sliceTo(raw_arg, 0), "--json")) json_count += 1;
+        }
+        if (json_count > 1) {
+            return common.usageErrorResultWithJson(allocator, .top_level, true, "duplicate `--json` for `{s}`.", .{cmd});
+        }
+        const json_requested = json_count == 1;
+        const extra_allowed = args.len == 3 and json_requested;
+        if (args.len > 2 and !extra_allowed) {
+            const extra_index: usize = if (json_requested) 3 else 2;
+            return common.usageErrorResultWithJson(allocator, .top_level, json_requested, "unexpected argument after `{s}`: `{s}`.", .{
                 cmd,
-                std.mem.sliceTo(args[2], 0),
+                std.mem.sliceTo(args[extra_index], 0),
             });
         }
-        return .{ .command = .{ .version = {} } };
+        return .{ .command = .{ .version = .{ .json = json_requested } } };
     }
 
     if (std.mem.eql(u8, cmd, "-")) {
