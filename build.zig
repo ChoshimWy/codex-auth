@@ -84,6 +84,7 @@ pub fn build(b: *std.Build) void {
         "tests/cli_picker_test.zig",
         "tests/compat_fs_test.zig",
         "tests/cli_integration_test.zig",
+        "tests/json_api_test.zig",
         "tests/lib_compile_test.zig",
         "tests/registry_import_test.zig",
         "tests/registry_test.zig",

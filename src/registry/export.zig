@@ -16,6 +16,7 @@ pub const ExportFormat = enum { standard, cpa };
 pub const ExportSummary = struct {
     dest_path: []u8,
     exported: usize,
+    skipped: usize = 0,
 
     pub fn deinit(self: *ExportSummary, allocator: std.mem.Allocator) void {
         allocator.free(self.dest_path);
@@ -42,9 +43,11 @@ pub fn exportAccounts(
     try ensurePrivateDir(dest_path);
 
     var exported: usize = 0;
+    var skipped: usize = 0;
     for (reg.accounts.items) |rec| {
         if (format == .cpa and rec.auth_mode != null and rec.auth_mode.? == .apikey) {
             std.log.warn("skipping API-key account {s}: CPA export requires ChatGPT tokens", .{rec.email});
+            skipped += 1;
             continue;
         }
 
@@ -73,6 +76,7 @@ pub fn exportAccounts(
     return .{
         .dest_path = dest_path,
         .exported = exported,
+        .skipped = skipped,
     };
 }
 

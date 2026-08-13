@@ -96,3 +96,17 @@ ERROR: --id: App ID does not exist
 ERROR: --codex-cli-path: Path does not exist
         "C:\Program Files\WindowsApps\OpenAI.Codext_26.519.2081.0_x64__fzsqvsr4xv3kw\app\Codex.exe"
 ```
+
+## JSON Output
+
+```shell
+codex-auth app [--id <id>] [--codex-cli-path <path>] [--codex-home <path>] --json
+```
+
+- The success document reports `status` (`launched` or `already_running`),
+  the resolved `app_id`, and the injected `codex_cli_path` (or `null`).
+- Human diagnostics (launch plan, download progress) still go to stderr;
+  stdout carries exactly the JSON document.
+- Launch and validation failures are handled `app_launch_failed` errors.
+
+See [json-api.md](../json-api.md) for the versioned contract.

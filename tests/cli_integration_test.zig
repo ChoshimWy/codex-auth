@@ -4908,3 +4908,636 @@ test "Scenario: Given unsupported native host with missing explicit codex CLI pa
     try std.testing.expect(std.mem.indexOf(u8, result.stderr, missing_cli_path) == null);
     try std.testing.expect(std.mem.indexOf(u8, result.stderr, "Environment Configuration") == null);
 }
+
+test "Scenario: Given the built CLI when running version with json then it emits the version capability document" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+
+    const result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "--version", "--json" });
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectSuccess(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"command\":\"version\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"supported_commands\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"alias\"") != null);
+    try std.testing.expectEqualStrings("", result.stderr);
+}
+
+fn importFixtureAccount(
+    gpa: std.mem.Allocator,
+    project_root: []const u8,
+    home_root: []const u8,
+    tmp_dir: fs.Dir,
+    email: []const u8,
+) !void {
+    const rel_path = try std.fmt.allocPrint(gpa, "imports/{s}.json", .{email});
+    defer gpa.free(rel_path);
+    const auth_json = try fixtures.authJsonWithEmailPlan(gpa, email, "plus");
+    defer gpa.free(auth_json);
+    try tmp_dir.writeFile(.{ .sub_path = rel_path, .data = auth_json });
+
+    const import_path = try fs.path.join(gpa, &[_][]const u8{ home_root, rel_path });
+    defer gpa.free(import_path);
+    const result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "import", import_path });
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectSuccess(result);
+}
+
+test "Scenario: Given imported accounts when setting and clearing an alias with json then the account document reports each change" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+    try tmp.dir.makePath("imports");
+    try importFixtureAccount(gpa, project_root, home_root, tmp.dir, "alias-a@example.com");
+    try importFixtureAccount(gpa, project_root, home_root, tmp.dir, "alias-b@example.com");
+
+    const set_result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "alias", "set", "alias-a@example.com", "work", "--json" });
+    defer gpa.free(set_result.stdout);
+    defer gpa.free(set_result.stderr);
+    try expectSuccess(set_result);
+    try std.testing.expect(std.mem.indexOf(u8, set_result.stdout, "\"operation\":\"set\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, set_result.stdout, "\"alias\":\"work\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, set_result.stdout, "\"email\":\"alias-a@example.com\"") != null);
+    try std.testing.expectEqualStrings("", set_result.stderr);
+
+    const clear_result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "alias", "clear", "alias-a@example.com", "--json" });
+    defer gpa.free(clear_result.stdout);
+    defer gpa.free(clear_result.stderr);
+    try expectSuccess(clear_result);
+    try std.testing.expect(std.mem.indexOf(u8, clear_result.stdout, "\"operation\":\"clear\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, clear_result.stdout, "\"alias\":null") != null);
+    try std.testing.expectEqualStrings("", clear_result.stderr);
+
+    const clear_again = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "alias", "clear", "alias-a@example.com", "--json" });
+    defer gpa.free(clear_again.stdout);
+    defer gpa.free(clear_again.stderr);
+    try expectSuccess(clear_again);
+    try std.testing.expect(std.mem.indexOf(u8, clear_again.stdout, "\"operation\":\"clear\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, clear_again.stdout, "\"alias\":null") != null);
+    try std.testing.expectEqualStrings("", clear_again.stderr);
+}
+
+test "Scenario: Given an alias owned by another account when setting the same alias with json then duplicate_alias is reported" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+    try tmp.dir.makePath("imports");
+    try importFixtureAccount(gpa, project_root, home_root, tmp.dir, "alias-a@example.com");
+    try importFixtureAccount(gpa, project_root, home_root, tmp.dir, "alias-b@example.com");
+
+    const first = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "alias", "set", "alias-a@example.com", "work", "--json" });
+    defer gpa.free(first.stdout);
+    defer gpa.free(first.stderr);
+    try expectSuccess(first);
+
+    const result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "alias", "set", "alias-b@example.com", "work", "--json" });
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectFailure(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"code\":\"duplicate_alias\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "alias-a@example.com") != null);
+    try std.testing.expectEqualStrings("", result.stderr);
+}
+
+test "Scenario: Given accounts sharing an email fragment when setting an alias with an ambiguous query and json then ambiguous_query with candidates is reported" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+    try tmp.dir.makePath("imports");
+    try importFixtureAccount(gpa, project_root, home_root, tmp.dir, "team-x@example.com");
+    try importFixtureAccount(gpa, project_root, home_root, tmp.dir, "team-xy@example.com");
+
+    const result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "alias", "set", "team-x", "shared", "--json" });
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectFailure(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"code\":\"ambiguous_query\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"candidates\"") != null);
+    try std.testing.expectEqualStrings("", result.stderr);
+}
+
+test "Scenario: Given an account when setting an all-digit alias with json then invalid_alias is reported" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+    try tmp.dir.makePath("imports");
+    try importFixtureAccount(gpa, project_root, home_root, tmp.dir, "alias-a@example.com");
+
+    const result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "alias", "set", "alias-a@example.com", "123", "--json" });
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectFailure(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"code\":\"invalid_alias\"") != null);
+    try std.testing.expectEqualStrings("", result.stderr);
+}
+
+test "Scenario: Given no matching account when setting an alias with json then account_not_found is reported" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+    try tmp.dir.makePath("imports");
+    try importFixtureAccount(gpa, project_root, home_root, tmp.dir, "alias-a@example.com");
+
+    const result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "alias", "set", "missing@example.com", "work", "--json" });
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectFailure(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"code\":\"account_not_found\"") != null);
+    try std.testing.expectEqualStrings("", result.stderr);
+}
+
+test "Scenario: Given an auth file when importing with json then the import document reports the imported account" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+    try tmp.dir.makePath("imports");
+
+    const rel_path = "imports/token-import-json@example.com.json";
+    const auth_json = try fixtures.authJsonWithEmailPlan(gpa, "token-import-json@example.com", "plus");
+    defer gpa.free(auth_json);
+    try tmp.dir.writeFile(.{ .sub_path = rel_path, .data = auth_json });
+
+    const import_path = try fs.path.join(gpa, &[_][]const u8{ home_root, rel_path });
+    defer gpa.free(import_path);
+
+    const result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "import", import_path, "--json" });
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectSuccess(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"command\":\"import\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"mode\":\"standard\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"status\":\"imported\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"imported_count\":1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"active_account_key\":null") != null);
+    try std.testing.expectEqualStrings("", result.stderr);
+}
+
+test "Scenario: Given an unreadable import path when importing with json then path_unreadable is reported" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+
+    const missing_path = try fs.path.join(gpa, &[_][]const u8{ home_root, "missing.json" });
+    defer gpa.free(missing_path);
+
+    const result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "import", missing_path, "--json" });
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectFailure(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"code\":\"path_unreadable\"") != null);
+    try std.testing.expectEqualStrings("", result.stderr);
+}
+
+test "Scenario: Given a malformed single auth file when importing with json then registry_error is reported" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+    try tmp.dir.makePath("imports");
+
+    const rel_path = "imports/broken-import-json.json";
+    try tmp.dir.writeFile(.{ .sub_path = rel_path, .data = "{\"tokens\":{\"access_token\":\"x\"}}" });
+    const import_path = try fs.path.join(gpa, &[_][]const u8{ home_root, rel_path });
+    defer gpa.free(import_path);
+
+    const result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "import", import_path, "--json" });
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectFailure(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"code\":\"registry_error\"") != null);
+    try std.testing.expectEqualStrings("", result.stderr);
+}
+
+test "Scenario: Given a fresh home when purging with json then registry_rebuilt is reported" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+
+    const result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "import", "--purge", "--json" });
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectSuccess(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"mode\":\"purge\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"registry_rebuilt\":true") != null);
+    try std.testing.expectEqualStrings("", result.stderr);
+}
+
+test "Scenario: Given a fresh home when exporting with json then the export document reports zero exported accounts" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+
+    const result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "export", "--json" });
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectSuccess(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"command\":\"export\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"exported_count\":0") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "accounts/backup") != null);
+    try std.testing.expectEqualStrings("", result.stderr);
+}
+
+test "Scenario: Given an imported account when exporting to a directory with json then the export document reports the exported account" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+    try tmp.dir.makePath("imports");
+    try importFixtureAccount(gpa, project_root, home_root, tmp.dir, "export-json@example.com");
+    try tmp.dir.makePath("exported");
+
+    const dest_path = try fs.path.join(gpa, &[_][]const u8{ home_root, "exported" });
+    defer gpa.free(dest_path);
+
+    const result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "export", dest_path, "--json" });
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectSuccess(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"format\":\"standard\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"exported_count\":1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"skipped_count\":0") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"destination\":") != null);
+    try std.testing.expectEqualStrings("", result.stderr);
+}
+
+test "Scenario: Given a blocked destination when exporting with json then path_not_writable is reported" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+    try tmp.dir.writeFile(.{ .sub_path = "blocked", .data = "" });
+
+    const blocked_path = try fs.path.join(gpa, &[_][]const u8{ home_root, "blocked", "sub" });
+    defer gpa.free(blocked_path);
+
+    const result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "export", blocked_path, "--json" });
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectFailure(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"code\":\"path_not_writable\"") != null);
+    try std.testing.expectEqualStrings("", result.stderr);
+}
+
+test "Scenario: Given an invalid app id when launching with json then app_launch_failed is reported" {
+    if (builtin.os.tag != .macos) return error.SkipZigTest;
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+
+    const result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "app", "--id", "com.invalid.nonexistent", "--json" });
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectFailure(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"code\":\"app_launch_failed\"") != null);
+}
+
+fn writeDeviceAuthFakeCodex(dir: fs.Dir) !void {
+    const script =
+        if (builtin.os.tag == .windows)
+            "@echo off\r\n" ++
+                "echo Welcome to Codex [v0.147.0]\r\n" ++
+                "echo 1. Open this link in your browser and sign in to your account\r\n" ++
+                "echo    https://auth.openai.com/codex/device\r\n" ++
+                "echo 2. Enter this one-time code (expires in 15 minutes)\r\n" ++
+                "echo    TEST-1234\r\n" ++
+                "set \"CODEX_HOME_DIR=%CODEX_HOME%\"\r\n" ++
+                "if \"%CODEX_HOME_DIR%\"==\"\" set \"CODEX_HOME_DIR=%HOME%\\.codex\"\r\n" ++
+                "if not exist \"%CODEX_HOME_DIR%\" mkdir \"%CODEX_HOME_DIR%\"\r\n" ++
+                "copy /Y \"%HOME%\\fake-auth.json\" \"%CODEX_HOME_DIR%\\auth.json\" >NUL\r\n" ++
+                "exit /b 0\r\n"
+        else
+            "#!/bin/sh\n" ++
+                "printf 'Welcome to Codex [v0.147.0]\\n'\n" ++
+                "printf '1. Open this link in your browser and sign in to your account\\n'\n" ++
+                "printf '   \\033[94mhttps://auth.openai.com/codex/device\\033[0m\\n'\n" ++
+                "printf '2. Enter this one-time code (expires in 15 minutes)\\n'\n" ++
+                "printf '   \\033[94mTEST-1234\\033[0m\\n'\n" ++
+                "CODEX_HOME_DIR=\"${CODEX_HOME:-$HOME/.codex}\"\n" ++
+                "mkdir -p \"$CODEX_HOME_DIR\"\n" ++
+                "cp \"$HOME/fake-auth.json\" \"$CODEX_HOME_DIR/auth.json\"\n" ++
+                "exit 0\n";
+    const sub_path = fakeCodexCommandPath();
+    try dir.writeFile(.{ .sub_path = sub_path, .data = script });
+
+    if (builtin.os.tag != .windows) {
+        var file = try dir.openFile(sub_path, .{ .mode = .read_write });
+        defer file.close();
+        try file.chmod(0o755);
+    }
+}
+
+test "Scenario: Given device auth login with json when running login then awaiting_user and completed phases are emitted" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+    try tmp.dir.makePath("fake-bin");
+
+    const expected_email = "device-auth-json@example.com";
+    const fake_auth = try fixtures.authJsonWithEmailPlan(gpa, expected_email, "plus");
+    defer gpa.free(fake_auth);
+    try tmp.dir.writeFile(.{ .sub_path = "fake-auth.json", .data = fake_auth });
+    try writeDeviceAuthFakeCodex(tmp.dir);
+
+    const fake_bin_path = try fs.path.join(gpa, &[_][]const u8{ home_root, "fake-bin" });
+    defer gpa.free(fake_bin_path);
+    const path_override = try prependPathEntryAlloc(gpa, fake_bin_path);
+    defer gpa.free(path_override);
+
+    const result = try runCliWithIsolatedHomeAndPath(
+        gpa,
+        project_root,
+        home_root,
+        path_override,
+        &[_][]const u8{ "login", "--device-auth", "--json" },
+    );
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectSuccess(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"phase\":\"awaiting_user\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"verification_url\":\"https://auth.openai.com/codex/device\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"user_code\":\"TEST-1234\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"phase\":\"completed\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"email\":\"device-auth-json@example.com\"") != null);
+    try std.testing.expectEqualStrings("", result.stderr);
+
+    const codex_home = try codexHomeAlloc(gpa, home_root);
+    defer gpa.free(codex_home);
+    var loaded = try registry.loadRegistry(gpa, codex_home);
+    defer loaded.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 1), loaded.accounts.items.len);
+    try std.testing.expect(std.mem.eql(u8, loaded.accounts.items[0].email, expected_email));
+    try std.testing.expect(loaded.active_account_key != null);
+}
+
+fn writeDeviceAuthFailingFakeCodex(dir: fs.Dir) !void {
+    const script =
+        if (builtin.os.tag == .windows)
+            "@echo off\r\n" ++
+                "echo    https://auth.openai.com/codex/device\r\n" ++
+                "echo    TEST-1234\r\n" ++
+                "exit /b 9\r\n"
+        else
+            "#!/bin/sh\n" ++
+                "printf '   \\033[94mhttps://auth.openai.com/codex/device\\033[0m\\n'\n" ++
+                "printf '   \\033[94mTEST-1234\\033[0m\\n'\n" ++
+                "exit 9\n";
+    const sub_path = fakeCodexCommandPath();
+    try dir.writeFile(.{ .sub_path = sub_path, .data = script });
+
+    if (builtin.os.tag != .windows) {
+        var file = try dir.openFile(sub_path, .{ .mode = .read_write });
+        defer file.close();
+        try file.chmod(0o755);
+    }
+}
+
+test "Scenario: Given device auth login with json when the codex child fails after device info then awaiting_user and failed phases are emitted" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+    try tmp.dir.makePath("fake-bin");
+    try writeDeviceAuthFailingFakeCodex(tmp.dir);
+
+    const fake_bin_path = try fs.path.join(gpa, &[_][]const u8{ home_root, "fake-bin" });
+    defer gpa.free(fake_bin_path);
+    const path_override = try prependPathEntryAlloc(gpa, fake_bin_path);
+    defer gpa.free(path_override);
+
+    const result = try runCliWithIsolatedHomeAndPath(
+        gpa,
+        project_root,
+        home_root,
+        path_override,
+        &[_][]const u8{ "login", "--device-auth", "--json" },
+    );
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectSuccess(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"phase\":\"awaiting_user\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"phase\":\"failed\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"message\":\"codex login failed with exit code 9\"") != null);
+
+    const codex_home = try codexHomeAlloc(gpa, home_root);
+    defer gpa.free(codex_home);
+    try std.testing.expectError(error.FileNotFound, tmp.dir.openFile(".codex/accounts/registry.json", .{}));
+}
+
+test "Scenario: Given device auth login with json when the codex child fails before device info then the failed phase is emitted" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+    try tmp.dir.makePath("fake-bin");
+    try writeFailingFakeCodex(tmp.dir, 9);
+
+    const fake_bin_path = try fs.path.join(gpa, &[_][]const u8{ home_root, "fake-bin" });
+    defer gpa.free(fake_bin_path);
+    const path_override = try prependPathEntryAlloc(gpa, fake_bin_path);
+    defer gpa.free(path_override);
+
+    const result = try runCliWithIsolatedHomeAndPath(
+        gpa,
+        project_root,
+        home_root,
+        path_override,
+        &[_][]const u8{ "login", "--device-auth", "--json" },
+    );
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectSuccess(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"phase\":\"failed\"") != null);
+
+    const codex_home = try codexHomeAlloc(gpa, home_root);
+    defer gpa.free(codex_home);
+    try std.testing.expectError(error.FileNotFound, tmp.dir.openFile(".codex/accounts/registry.json", .{}));
+}
+
+test "Scenario: Given two accounts when switching with previous and json then switched_to is the former active account" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+    try tmp.dir.makePath("imports");
+    try importFixtureAccount(gpa, project_root, home_root, tmp.dir, "prev-a@example.com");
+    try importFixtureAccount(gpa, project_root, home_root, tmp.dir, "prev-b@example.com");
+
+    // 先切到 a(建立活跃账号),再切到 b(记录 previous = a)
+    const first = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "switch", "prev-a@example.com", "--json" });
+    defer gpa.free(first.stdout);
+    defer gpa.free(first.stderr);
+    try expectSuccess(first);
+
+    const second = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "switch", "prev-b@example.com", "--json" });
+    defer gpa.free(second.stdout);
+    defer gpa.free(second.stderr);
+    try expectSuccess(second);
+
+    // switch --previous --json 应切回 a
+    const result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "switch", "--previous", "--json" });
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectSuccess(result);
+    const key_a = try fixtures.accountKeyForEmailAlloc(gpa, "prev-a@example.com");
+    defer gpa.free(key_a);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"account_key\":\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "prev-a@example.com") != null);
+    try std.testing.expectEqualStrings("", result.stderr);
+}
+
+test "Scenario: Given a fresh home when cleaning with json then zero counts are reported" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+
+    const result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "clean", "--json" });
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectSuccess(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"command\":\"clean\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"target\":\"accounts\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"auth_backups_removed\":0") != null);
+    try std.testing.expectEqualStrings("", result.stderr);
+}
+
+test "Scenario: Given a fresh home when reading config with json then the default interval is reported" {
+    const gpa = std.testing.allocator;
+    const project_root = try projectRootAlloc(gpa);
+    defer gpa.free(project_root);
+    try buildCliBinary(gpa, project_root);
+
+    var tmp = fs.tmpDir(.{});
+    defer tmp.cleanup();
+    const home_root = try tmp.dir.realpathAlloc(gpa, ".");
+    defer gpa.free(home_root);
+
+    const result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "config", "get", "--json" });
+    defer gpa.free(result.stdout);
+    defer gpa.free(result.stderr);
+    try expectSuccess(result);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"command\":\"config\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, result.stdout, "\"section\":\"live\"") != null);
+    try std.testing.expectEqualStrings("", result.stderr);
+
+    const set_result = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "config", "live", "--interval", "120", "--json" });
+    defer gpa.free(set_result.stdout);
+    defer gpa.free(set_result.stderr);
+    try expectSuccess(set_result);
+    try std.testing.expect(std.mem.indexOf(u8, set_result.stdout, "\"interval_seconds\":120") != null);
+
+    const get_again = try runCliWithIsolatedHome(gpa, project_root, home_root, &[_][]const u8{ "config", "get", "--json" });
+    defer gpa.free(get_again.stdout);
+    defer gpa.free(get_again.stderr);
+    try expectSuccess(get_again);
+    try std.testing.expect(std.mem.indexOf(u8, get_again.stdout, "\"interval_seconds\":120") != null);
+}

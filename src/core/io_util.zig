@@ -9,7 +9,11 @@ pub const Stdout = struct {
 
     pub fn init(self: *Stdout) void {
         const file = std.Io.File.stdout();
-        self.writer = file.writer(app_runtime.io(), &self.buffer);
+        // Streaming mode appends at the current file offset, so sequential
+        // short-lived writer instances (e.g. the multi-document login flow)
+        // write after each other instead of the positional mode's fresh
+        // offset 0 overwriting earlier output when stdout is a seekable file.
+        self.writer = std.Io.File.Writer.initStreaming(file, app_runtime.io(), &self.buffer);
         self.color_enabled = terminal_color.fileColorEnabled(file);
     }
 
@@ -25,7 +29,7 @@ pub const Stderr = struct {
 
     pub fn init(self: *Stderr) void {
         const file = std.Io.File.stderr();
-        self.writer = file.writer(app_runtime.io(), &self.buffer);
+        self.writer = std.Io.File.Writer.initStreaming(file, app_runtime.io(), &self.buffer);
         self.color_enabled = terminal_color.fileColorEnabled(file);
     }
 

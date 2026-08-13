@@ -25,3 +25,17 @@ codex-auth export --cpa [<dir>]
 ## Output
 
 - `stdout` receives the number of exported accounts and destination directory.
+
+## JSON Output
+
+```shell
+codex-auth export [<dir>] [--cpa] --json
+```
+
+- The success document reports the `format` (`standard` or `cpa`), the
+  resolved `destination`, `exported_count`, and `skipped_count` (CPA mode
+  skips API-key accounts).
+- A destination that cannot be written is a handled `path_not_writable`
+  error.
+
+See [json-api.md](../json-api.md) for the versioned contract.

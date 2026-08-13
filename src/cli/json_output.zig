@@ -2,8 +2,11 @@ const std = @import("std");
 const io_util = @import("../core/io_util.zig");
 const registry = @import("../registry/root.zig");
 const results = @import("../workflows/results.zig");
+const version = @import("../version.zig");
 
 const schema_version: u32 = 1;
+
+pub const supported_json_commands = [_][]const u8{ "list", "switch", "remove", "alias", "import", "export", "app", "login", "clean", "config" };
 
 pub fn printListResult(result: *const results.ListResult) !void {
     var stdout: io_util.Stdout = undefined;
@@ -28,6 +31,88 @@ pub fn printRemoveResult(result: *const results.RemoveResult) !void {
     stdout.init();
     const out = stdout.out();
     try writeRemoveResult(out, result);
+    try out.writeAll("\n");
+    try out.flush();
+}
+
+pub fn printAliasResult(result: *const results.AliasResult, operation: []const u8) !void {
+    var stdout: io_util.Stdout = undefined;
+    stdout.init();
+    const out = stdout.out();
+    try writeAliasResult(out, result, operation);
+    try out.writeAll("\n");
+    try out.flush();
+}
+
+pub fn printVersionResult() !void {
+    var stdout: io_util.Stdout = undefined;
+    stdout.init();
+    const out = stdout.out();
+    try writeVersionResult(out);
+    try out.writeAll("\n");
+    try out.flush();
+}
+
+pub fn printExportResult(summary: *const registry.ExportSummary, format: []const u8) !void {
+    var stdout: io_util.Stdout = undefined;
+    stdout.init();
+    const out = stdout.out();
+    try writeExportResult(out, summary, format);
+    try out.writeAll("\n");
+    try out.flush();
+}
+
+pub fn printAppResult(
+    status: []const u8,
+    app_id: ?[]const u8,
+    codex_cli_path: ?[]const u8,
+) !void {
+    var stdout: io_util.Stdout = undefined;
+    stdout.init();
+    const out = stdout.out();
+    try writeAppResult(out, status, app_id, codex_cli_path);
+    try out.writeAll("\n");
+    try out.flush();
+}
+
+pub fn printLoginAwaitingUser(verification_url: []const u8, user_code: []const u8) !void {
+    var stdout: io_util.Stdout = undefined;
+    stdout.init();
+    const out = stdout.out();
+    try writeLoginAwaitingUser(out, verification_url, user_code);
+    try out.writeAll("\n");
+    try out.flush();
+}
+
+pub fn printLoginCompleted(active_account_key: ?[]const u8, account: *const results.AccountView) !void {
+    var stdout: io_util.Stdout = undefined;
+    stdout.init();
+    const out = stdout.out();
+    try writeLoginCompleted(out, active_account_key, account);
+    try out.writeAll("\n");
+    try out.flush();
+}
+
+pub fn printLoginFailed(message: []const u8) !void {
+    var stdout: io_util.Stdout = undefined;
+    stdout.init();
+    const out = stdout.out();
+    try writeLoginFailed(out, message);
+    try out.writeAll("\n");
+    try out.flush();
+}
+
+pub fn printImportResult(
+    report: *const registry.ImportReport,
+    mode: []const u8,
+    source: ?[]const u8,
+    active_account_key: ?[]const u8,
+    registry_rebuilt: ?bool,
+) !void {
+    var stdout: io_util.Stdout = undefined;
+    stdout.init();
+    const out = stdout.out();
+    try writeImportResult(out, report, mode, source, active_account_key, registry_rebuilt);
     try out.writeAll("\n");
     try out.flush();
 }
@@ -89,6 +174,270 @@ pub fn writeRemoveResult(out: *std.Io.Writer, result: *const results.RemoveResul
     try jw.objectField("new_active_account_key");
     try jw.write(result.new_active_account_key);
     try jw.endObject();
+}
+
+pub fn writeAliasResult(out: *std.Io.Writer, result: *const results.AliasResult, operation: []const u8) !void {
+    var jw: std.json.Stringify = .{ .writer = out, .options = .{} };
+    try jw.beginObject();
+    try writeSchemaVersion(&jw);
+    try jw.objectField("command");
+    try jw.write("alias");
+    try jw.objectField("operation");
+    try jw.write(operation);
+    try jw.objectField("updated");
+    try writeAccount(&jw, &result.updated);
+    try jw.endObject();
+}
+
+pub fn writeVersionResult(out: *std.Io.Writer) !void {
+    var jw: std.json.Stringify = .{ .writer = out, .options = .{} };
+    try jw.beginObject();
+    try writeSchemaVersion(&jw);
+    try jw.objectField("command");
+    try jw.write("version");
+    try jw.objectField("version");
+    try jw.write(version.app_version);
+    try jw.objectField("json_api_schema");
+    try jw.write(schema_version);
+    try jw.objectField("supported_commands");
+    try jw.beginArray();
+    for (supported_json_commands) |command_name| {
+        try jw.write(command_name);
+    }
+    try jw.endArray();
+    try jw.endObject();
+}
+
+pub fn writeExportResult(
+    out: *std.Io.Writer,
+    summary: *const registry.ExportSummary,
+    format: []const u8,
+) !void {
+    var jw: std.json.Stringify = .{ .writer = out, .options = .{} };
+    try jw.beginObject();
+    try writeSchemaVersion(&jw);
+    try jw.objectField("command");
+    try jw.write("export");
+    try jw.objectField("format");
+    try jw.write(format);
+    try jw.objectField("destination");
+    try jw.write(summary.dest_path);
+    try jw.objectField("exported_count");
+    try jw.write(summary.exported);
+    try jw.objectField("skipped_count");
+    try jw.write(summary.skipped);
+    try jw.endObject();
+}
+
+pub fn writeAppResult(
+    out: *std.Io.Writer,
+    status: []const u8,
+    app_id: ?[]const u8,
+    codex_cli_path: ?[]const u8,
+) !void {
+    var jw: std.json.Stringify = .{ .writer = out, .options = .{} };
+    try jw.beginObject();
+    try writeSchemaVersion(&jw);
+    try jw.objectField("command");
+    try jw.write("app");
+    try jw.objectField("status");
+    try jw.write(status);
+    try jw.objectField("app_id");
+    try jw.write(app_id);
+    try jw.objectField("codex_cli_path");
+    try jw.write(codex_cli_path);
+    try jw.endObject();
+}
+
+pub fn writeImportResult(
+    out: *std.Io.Writer,
+    report: *const registry.ImportReport,
+    mode: []const u8,
+    source: ?[]const u8,
+    active_account_key: ?[]const u8,
+    registry_rebuilt: ?bool,
+) !void {
+    var jw: std.json.Stringify = .{ .writer = out, .options = .{} };
+    try jw.beginObject();
+    try writeSchemaVersion(&jw);
+    try jw.objectField("command");
+    try jw.write("import");
+    try jw.objectField("mode");
+    try jw.write(mode);
+    try jw.objectField("source");
+    try jw.write(source);
+    try jw.objectField("results");
+    try jw.beginArray();
+    for (report.events.items) |*event| {
+        try jw.beginObject();
+        try jw.objectField("path");
+        try jw.write(event.label);
+        try jw.objectField("status");
+        try jw.write(switch (event.outcome) {
+            .imported => "imported",
+            .updated => "updated",
+            .skipped => "skipped",
+        });
+        try jw.objectField("email");
+        try jw.write(event.detail);
+        try jw.objectField("reason");
+        try jw.write(event.reason);
+        try jw.endObject();
+    }
+    try jw.endArray();
+    try jw.objectField("imported_count");
+    try jw.write(report.imported);
+    try jw.objectField("updated_count");
+    try jw.write(report.updated);
+    try jw.objectField("skipped_count");
+    try jw.write(report.skipped);
+    try jw.objectField("active_account_key");
+    try jw.write(active_account_key);
+    if (registry_rebuilt) |rebuilt| {
+        try jw.objectField("registry_rebuilt");
+        try jw.write(rebuilt);
+    }
+    try jw.endObject();
+}
+
+pub fn writeLoginAwaitingUser(out: *std.Io.Writer, verification_url: []const u8, user_code: []const u8) !void {
+    var jw: std.json.Stringify = .{ .writer = out, .options = .{} };
+    try jw.beginObject();
+    try writeSchemaVersion(&jw);
+    try jw.objectField("command");
+    try jw.write("login");
+    try jw.objectField("mode");
+    try jw.write("device_auth");
+    try jw.objectField("phase");
+    try jw.write("awaiting_user");
+    try jw.objectField("verification_url");
+    try jw.write(verification_url);
+    try jw.objectField("user_code");
+    try jw.write(user_code);
+    try jw.endObject();
+}
+
+pub fn writeLoginCompleted(out: *std.Io.Writer, active_account_key: ?[]const u8, account: *const results.AccountView) !void {
+    var jw: std.json.Stringify = .{ .writer = out, .options = .{} };
+    try jw.beginObject();
+    try writeSchemaVersion(&jw);
+    try jw.objectField("command");
+    try jw.write("login");
+    try jw.objectField("mode");
+    try jw.write("device_auth");
+    try jw.objectField("phase");
+    try jw.write("completed");
+    try jw.objectField("active_account_key");
+    try jw.write(active_account_key);
+    try jw.objectField("account");
+    try writeAccount(&jw, account);
+    try jw.endObject();
+}
+
+pub fn writeLoginFailed(out: *std.Io.Writer, message: []const u8) !void {
+    var jw: std.json.Stringify = .{ .writer = out, .options = .{} };
+    try jw.beginObject();
+    try writeSchemaVersion(&jw);
+    try jw.objectField("command");
+    try jw.write("login");
+    try jw.objectField("mode");
+    try jw.write("device_auth");
+    try jw.objectField("phase");
+    try jw.write("failed");
+    try jw.objectField("message");
+    try jw.write(message);
+    try jw.endObject();
+}
+
+pub const CleanResultView = struct {
+    target: []const u8,
+    auth_backups_removed: ?usize = null,
+    registry_backups_removed: ?usize = null,
+    stale_snapshot_files_removed: ?usize = null,
+    platform: ?[]const u8 = null,
+    files_removed: ?usize = null,
+};
+
+pub fn printCleanResult(view: *const CleanResultView) !void {
+    var stdout: io_util.Stdout = undefined;
+    stdout.init();
+    const out = stdout.out();
+    try writeCleanResult(out, view);
+    try out.writeAll("\n");
+    try out.flush();
+}
+
+pub fn writeCleanResult(out: *std.Io.Writer, view: *const CleanResultView) !void {
+    var jw: std.json.Stringify = .{ .writer = out, .options = .{} };
+    try jw.beginObject();
+    try writeSchemaVersion(&jw);
+    try jw.objectField("command");
+    try jw.write("clean");
+    try jw.objectField("target");
+    try jw.write(view.target);
+    try jw.objectField("auth_backups_removed");
+    try jw.write(view.auth_backups_removed);
+    try jw.objectField("registry_backups_removed");
+    try jw.write(view.registry_backups_removed);
+    try jw.objectField("stale_snapshot_files_removed");
+    try jw.write(view.stale_snapshot_files_removed);
+    try jw.objectField("platform");
+    try jw.write(view.platform);
+    try jw.objectField("files_removed");
+    try jw.write(view.files_removed);
+    try jw.endObject();
+}
+
+pub fn printConfigResult(section: []const u8, interval_seconds: u16) !void {
+    var stdout: io_util.Stdout = undefined;
+    stdout.init();
+    const out = stdout.out();
+    try writeConfigResult(out, section, interval_seconds);
+    try out.writeAll("\n");
+    try out.flush();
+}
+
+pub fn writeConfigResult(out: *std.Io.Writer, section: []const u8, interval_seconds: u16) !void {
+    var jw: std.json.Stringify = .{ .writer = out, .options = .{} };
+    try jw.beginObject();
+    try writeSchemaVersion(&jw);
+    try jw.objectField("command");
+    try jw.write("config");
+    try jw.objectField("section");
+    try jw.write(section);
+    try jw.objectField("interval_seconds");
+    try jw.write(interval_seconds);
+    try jw.endObject();
+}
+
+/// Maps an unhandled workflow error to the `registry_error` JSON error document
+/// and a handled exit-code-1 error. `curl_unavailable` keeps its dedicated
+/// code. Shared by every JSON mutation workflow.
+pub fn printJsonWorkflowError(err: anyerror) anyerror {
+    switch (err) {
+        error.OutOfMemory => return err,
+        error.CurlRequired => {
+            try printError(
+                "curl_unavailable",
+                "curl is required for API-backed refresh. Install curl or use --skip-api.",
+                null,
+            );
+            return err;
+        },
+        else => {
+            try printError("registry_error", @errorName(err), null);
+            return error.RegistryError;
+        },
+    }
+}
+
+/// Maps a persistence failure that occurred after a mutation began to the
+/// `state_uncertain` JSON error document and a handled exit-code-1 error.
+/// The message names the failed operation.
+pub fn printJsonMutationError(err: anyerror, message: []const u8) anyerror {
+    if (err == error.OutOfMemory) return err;
+    try printError("state_uncertain", message, null);
+    return error.StateUncertain;
 }
 
 pub fn writeError(

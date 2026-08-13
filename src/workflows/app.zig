@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const app_runtime = @import("../core/runtime.zig");
 const http_child = @import("../api/http_child.zig");
 const registry = @import("../registry/root.zig");
+const cli_root = @import("../cli/root.zig");
 const types = @import("../cli/types.zig");
 const io_util = @import("../core/io_util.zig");
 const cli_style = @import("../cli/style.zig");
@@ -72,6 +73,40 @@ const ValidationIssue = struct {
 };
 
 pub fn handleApp(allocator: std.mem.Allocator, resolved_codex_home: []const u8, opts: types.AppOptions) !void {
+    var outcome = runAppFlow(allocator, resolved_codex_home, opts) catch |err| {
+        if (!opts.json) return err;
+        if (err == error.OutOfMemory) return err;
+        return printAppJsonError(allocator, err);
+    };
+    defer outcome.deinit(allocator);
+    if (opts.json) try cli_root.json_output.printAppResult(
+        switch (outcome.status) {
+            .launched => "launched",
+            .already_running => "already_running",
+        },
+        outcome.app_id,
+        outcome.codex_cli_path,
+    );
+}
+
+const AppFlowOutcome = struct {
+    status: AppStatus,
+    app_id: ?[]u8,
+    codex_cli_path: ?[]u8,
+
+    fn deinit(self: *AppFlowOutcome, allocator: std.mem.Allocator) void {
+        if (self.app_id) |app_id| allocator.free(app_id);
+        if (self.codex_cli_path) |path| allocator.free(path);
+        self.* = undefined;
+    }
+};
+
+const AppStatus = enum {
+    launched,
+    already_running,
+};
+
+fn runAppFlow(allocator: std.mem.Allocator, resolved_codex_home: []const u8, opts: types.AppOptions) !AppFlowOutcome {
     const effective_home = opts.codex_home orelse resolved_codex_home;
     const effective_platform = try resolvePlatform(allocator, effective_home, opts.platform);
     try validateAppPlatform(effective_platform.value);
@@ -80,17 +115,40 @@ pub fn handleApp(allocator: std.mem.Allocator, resolved_codex_home: []const u8, 
     defer effective_app_id.deinit(allocator);
     try requireAppId(effective_app_id);
     try validateConfiguredOptions(allocator, effective_platform.value, effective_app_id, opts);
+
+    const owned_app_id = if (opts.json)
+        if (effective_app_id.value) |app_id| try allocator.dupe(u8, app_id) else null
+    else
+        null;
+    errdefer if (owned_app_id) |app_id| allocator.free(app_id);
+
     if (try isCodexAppRunning(allocator, effective_platform.value, effective_app_id)) {
         try writeAppAlreadyRunning();
-        return;
+        return .{ .status = .already_running, .app_id = owned_app_id, .codex_cli_path = null };
     }
     const effective_cli_path = try resolveCliPath(allocator, effective_home, effective_platform.value, opts, true, false);
     defer effective_cli_path.deinit(allocator);
     try writeAppLaunchPlan(allocator, opts.codex_home != null, effective_home, effective_platform, effective_app_id, effective_cli_path);
 
+    const owned_cli_path = if (opts.json)
+        if (effective_cli_path.value) |path| try allocator.dupe(u8, path) else null
+    else
+        null;
+    errdefer if (owned_cli_path) |path| allocator.free(path);
+
     switch (opts.action) {
-        .launch => try launchApp(allocator, effective_app_id, effective_cli_path, effective_home, effective_platform, opts.inherit_stdio),
+        .launch => {
+            try launchApp(allocator, effective_app_id, effective_cli_path, effective_home, effective_platform, opts.inherit_stdio);
+            return .{ .status = .launched, .app_id = owned_app_id, .codex_cli_path = owned_cli_path };
+        },
     }
+}
+
+fn printAppJsonError(allocator: std.mem.Allocator, err: anyerror) anyerror {
+    const message = try std.fmt.allocPrint(allocator, "app launch failed: {s}", .{@errorName(err)});
+    defer allocator.free(message);
+    try cli_root.json_output.printError("app_launch_failed", message, null);
+    return err;
 }
 
 fn resolveAppId(platform: ?types.AppPlatform, opts: types.AppOptions) ResolvedValue {

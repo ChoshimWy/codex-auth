@@ -65,3 +65,17 @@ When switching succeeds:
 5. The success message uses the same identity label as singleton rows, for example `Switched to me(test@example.com)`.
 
 The previous-account pointer is internal CLI state and is not included in JSON responses.
+
+## JSON Output
+
+```shell
+codex-auth switch <query> --json
+codex-auth switch --previous --json
+```
+
+- `switch --previous --json` switches back to the previous active account and
+  reports the same `switched_to` document. Errors use `no_previous_account`
+  and `previous_account_unavailable`.
+- The `-` shortcut remains CLI-only.
+
+See [json-api.md](../json-api.md) for the versioned contract.

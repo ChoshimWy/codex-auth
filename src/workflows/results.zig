@@ -121,6 +121,26 @@ pub const RemoveResult = struct {
     }
 };
 
+pub const AliasResult = struct {
+    updated: AccountView,
+
+    pub fn deinit(self: *AliasResult, allocator: std.mem.Allocator) void {
+        self.updated.deinit(allocator);
+        self.* = undefined;
+    }
+};
+
+pub const LoginResult = struct {
+    active_account_key: ?[]u8,
+    account: AccountView,
+
+    pub fn deinit(self: *LoginResult, allocator: std.mem.Allocator) void {
+        if (self.active_account_key) |account_key| allocator.free(account_key);
+        self.account.deinit(allocator);
+        self.* = undefined;
+    }
+};
+
 pub const SelectorResolutionStatus = enum {
     resolved,
     ambiguous,
@@ -203,6 +223,35 @@ pub fn buildRemoveResult(
     return .{
         .removed = removed,
         .new_active_account_key = new_active,
+    };
+}
+
+pub fn buildAliasResult(
+    allocator: std.mem.Allocator,
+    reg: *const registry.Registry,
+    account_key: []const u8,
+) !AliasResult {
+    var updated = try buildAccountViewForKey(allocator, reg, null, account_key);
+    errdefer updated.deinit(allocator);
+
+    return .{
+        .updated = updated,
+    };
+}
+
+pub fn buildLoginResult(
+    allocator: std.mem.Allocator,
+    reg: *const registry.Registry,
+    account_key: []const u8,
+) !LoginResult {
+    var account = try buildAccountViewForKey(allocator, reg, null, account_key);
+    errdefer account.deinit(allocator);
+    const active = try dupeOptional(allocator, reg.active_account_key);
+    errdefer if (active) |account_key_value| allocator.free(account_key_value);
+
+    return .{
+        .active_account_key = active,
+        .account = account,
     };
 }
 

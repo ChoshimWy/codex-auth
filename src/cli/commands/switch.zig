@@ -9,6 +9,7 @@ pub fn parse(allocator: std.mem.Allocator, args: []const [:0]const u8) !types.Pa
     }
 
     var opts: types.SwitchOptions = .{};
+    var previous_via_dash = false;
     for (args) |raw_arg| {
         const arg = std.mem.sliceTo(raw_arg, 0);
         if (std.mem.eql(u8, arg, "--live")) {
@@ -55,6 +56,14 @@ pub fn parse(allocator: std.mem.Allocator, args: []const [:0]const u8) !types.Pa
             }
             continue;
         }
+        if (std.mem.eql(u8, arg, "--previous")) {
+            if (opts.target != .picker) {
+                freeTarget(allocator, opts.target);
+                return common.usageErrorResultWithJson(allocator, .switch_account, json_requested, "unexpected extra query `{s}` for `switch`.", .{arg});
+            }
+            opts.target = .previous;
+            continue;
+        }
         if (std.mem.startsWith(u8, arg, "-") and !std.mem.eql(u8, arg, "-")) {
             freeTarget(allocator, opts.target);
             return common.usageErrorResultWithJson(allocator, .switch_account, json_requested, "unknown flag `{s}` for `switch`.", .{arg});
@@ -63,20 +72,22 @@ pub fn parse(allocator: std.mem.Allocator, args: []const [:0]const u8) !types.Pa
             freeTarget(allocator, opts.target);
             return common.usageErrorResultWithJson(allocator, .switch_account, json_requested, "unexpected extra query `{s}` for `switch`.", .{arg});
         }
-        opts.target = if (std.mem.eql(u8, arg, "-"))
-            .previous
-        else
-            .{ .query = try allocator.dupe(u8, arg) };
+        if (std.mem.eql(u8, arg, "-")) {
+            previous_via_dash = true;
+            opts.target = .previous;
+            continue;
+        }
+        opts.target = .{ .query = try allocator.dupe(u8, arg) };
     }
     if (opts.live and opts.json) {
         freeTarget(allocator, opts.target);
         return common.usageErrorResultWithJson(allocator, .switch_account, true, "`--live` cannot be combined with `--json`.", .{});
     }
     if (opts.json and opts.target == .picker) {
-        return common.usageErrorResultWithJson(allocator, .switch_account, true, "`switch --json` requires an explicit account query.", .{});
+        return common.usageErrorResultWithJson(allocator, .switch_account, true, "`switch --json` requires an explicit account query or `--previous`.", .{});
     }
-    if (opts.json and opts.target == .previous) {
-        return common.usageErrorResultWithJson(allocator, .switch_account, true, "previous-account switching is CLI-only and cannot be combined with `--json`.", .{});
+    if (opts.json and opts.target == .previous and previous_via_dash) {
+        return common.usageErrorResultWithJson(allocator, .switch_account, true, "`switch -` is CLI-only; use `switch --previous --json`.", .{});
     }
     if (opts.target != .picker and (opts.api_mode != .default or opts.live)) {
         freeTarget(allocator, opts.target);

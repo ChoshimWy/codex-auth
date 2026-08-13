@@ -28,3 +28,16 @@ This is a one-time migration cleanup command. It does not install, start, or run
 
 - Backup behavior: [docs/implement.md](../implement.md)
 - Registry repair: [docs/commands/import.md](./import.md)
+
+## JSON Output
+
+```shell
+codex-auth clean [background] --json
+```
+
+- The success document reports the `target` (`accounts` or `background`) and
+  the removed counters (`auth_backups_removed` / `registry_backups_removed` /
+  `stale_snapshot_files_removed` for accounts; `platform` / `files_removed`
+  for background).
+
+See [json-api.md](../json-api.md) for the versioned contract.
